@@ -2,6 +2,7 @@
 
 *"Democracy works best when citizens are informed. ElectIQ makes every voter an expert."*
 
+Live Demo: https://electiq-ai.onrender.com
 
 ## Project Structure
 
