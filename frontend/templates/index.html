@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ElectIQ — Election Intelligence Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- NOISE OVERLAY -->
+<div class="noise"></div>
+
+<!-- SIDEBAR NAV -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">⚡</div>
+    <div>
+      <div class="brand-name">ElectIQ</div>
+      <div class="brand-sub">Election Intelligence</div>
+    </div>
+  </div>
+
+  <div class="nav-section-label">FEATURES</div>
+  <ul class="nav-links">
+    <li><a href="#" class="nav-link active" data-view="chat"><span class="nav-icon">💬</span>AI Assistant</a></li>
+    <li><a href="#" class="nav-link" data-view="journey"><span class="nav-icon">🗺️</span>Voter Journey</a></li>
+    <li><a href="#" class="nav-link" data-view="candidates"><span class="nav-icon">👥</span>Candidates</a></li>
+    <li><a href="#" class="nav-link" data-view="compare"><span class="nav-icon">⚖️</span>Compare</a></li>
+    <li><a href="#" class="nav-link" data-view="booth"><span class="nav-icon">📍</span>Find Booth</a></li>
+    <li><a href="#" class="nav-link" data-view="warroom"><span class="nav-icon">🔴</span>War Room</a></li>
+    <li><a href="#" class="nav-link" data-view="history"><span class="nav-icon">📈</span>Time Machine</a></li>
+    <li><a href="#" class="nav-link" data-view="quiz"><span class="nav-icon">🎯</span>Civic Quiz</a></li>
+    <li><a href="#" class="nav-link" data-view="impact"><span class="nav-icon">💡</span>My Vote Impact</a></li>
+    <li><a href="#" class="nav-link" data-view="voter"><span class="nav-icon">🪪</span>Voter Check</a></li>
+  </ul>
+
+  <div class="sidebar-bottom">
+    <div class="sidebar-election-badge">
+      <div class="badge-dot pulse-dot"></div>
+      <div>
+        <div class="badge-text">Election Day</div>
+        <div class="badge-date">May 15, 2026</div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- MOBILE HEADER -->
+<header class="mobile-header">
+  <button class="hamburger" id="hamburger">☰</button>
+  <div class="mobile-brand">⚡ ElectIQ</div>
+  <div></div>
+</header>
+
+<!-- MAIN CONTENT -->
+<main class="main-content">
+
+  <!-- ── CHAT VIEW ─────────────────────────────── -->
+  <section class="view active" id="view-chat">
+    <div class="view-header">
+      <h1 class="view-title">AI Election Assistant</h1>
+      <p class="view-sub">Ask anything about elections, candidates, or your voting rights</p>
+    </div>
+    <div class="chat-container">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-message assistant">
+          <div class="msg-avatar">⚡</div>
+          <div class="msg-bubble">
+            <p>Namaste! 🙏 I'm <strong>ElectIQ</strong> — your personal election intelligence guide.</p>
+            <p>I can help you with:</p>
+            <div class="quick-chips">
+              <button class="chip" onclick="sendChip('Where is my polling booth?')">📍 Find my booth</button>
+              <button class="chip" onclick="sendChip('Compare all candidates')">⚖️ Compare candidates</button>
+              <button class="chip" onclick="sendChip('How do I register to vote?')">📝 Register to vote</button>
+              <button class="chip" onclick="sendChip('What is NOTA?')">❓ What is NOTA?</button>
+              <button class="chip" onclick="sendChip('Tell me about the election timeline')">📅 Election timeline</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="lang-selector">
+          <select id="lang-select">
+            <option value="English">🇮🇳 English</option>
+            <option value="Hindi">हिंदी</option>
+            <option value="Tamil">தமிழ்</option>
+            <option value="Telugu">తెలుగు</option>
+            <option value="Bengali">বাংলা</option>
+            <option value="Marathi">मराठी</option>
+          </select>
+        </div>
+        <div class="input-row">
+          <textarea id="chat-input" placeholder="Ask me anything about elections..." rows="1"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()">
+            <span>➤</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── JOURNEY VIEW ───────────────────────────── -->
+  <section class="view" id="view-journey">
+    <div class="view-header">
+      <h1 class="view-title">Your Voter Journey</h1>
+      <p class="view-sub">A step-by-step guide through your democratic participation</p>
+    </div>
+    <div class="journey-steps" id="journey-steps">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── CANDIDATES VIEW ───────────────────────── -->
+  <section class="view" id="view-candidates">
+    <div class="view-header">
+      <h1 class="view-title">Candidates</h1>
+      <p class="view-sub">Mumbai North Constituency — 2026 General Election</p>
+    </div>
+    <div class="candidates-grid" id="candidates-grid">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── COMPARE VIEW ──────────────────────────── -->
+  <section class="view" id="view-compare">
+    <div class="view-header">
+      <h1 class="view-title">Candidate Comparison</h1>
+      <p class="view-sub">Side-by-side policy and integrity analysis</p>
+    </div>
+    <div id="compare-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── BOOTH VIEW ────────────────────────────── -->
+  <section class="view" id="view-booth">
+    <div class="view-header">
+      <h1 class="view-title">Find Your Polling Booth</h1>
+      <p class="view-sub">Live queue estimates and directions</p>
+    </div>
+    <div class="booth-container" id="booth-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── WAR ROOM VIEW ─────────────────────────── -->
+  <section class="view" id="view-warroom">
+    <div class="view-header">
+      <h1 class="view-title">🔴 Live Election War Room</h1>
+      <p class="view-sub">Real-time voter turnout and booth updates</p>
+    </div>
+    <div id="warroom-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── HISTORY VIEW ──────────────────────────── -->
+  <section class="view" id="view-history">
+    <div class="view-header">
+      <h1 class="view-title">Constituency Time Machine</h1>
+      <p class="view-sub">Mumbai North — 10 years of election history</p>
+    </div>
+    <div id="history-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── QUIZ VIEW ─────────────────────────────── -->
+  <section class="view" id="view-quiz">
+    <div class="view-header">
+      <h1 class="view-title">Civic Knowledge Quiz</h1>
+      <p class="view-sub">Test your election knowledge and earn badges</p>
+    </div>
+    <div id="quiz-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── IMPACT VIEW ───────────────────────────── -->
+  <section class="view" id="view-impact">
+    <div class="view-header">
+      <h1 class="view-title">My Vote Matters</h1>
+      <p class="view-sub">See how much your single vote can change history</p>
+    </div>
+    <div id="impact-container">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <!-- ── VOTER CHECK VIEW ──────────────────────── -->
+  <section class="view" id="view-voter">
+    <div class="view-header">
+      <h1 class="view-title">Voter Registration Check</h1>
+      <p class="view-sub">Verify your EPIC number and find your voter details</p>
+    </div>
+    <div id="voter-container">
+      <div class="voter-check-card">
+        <div class="voter-icon">🪪</div>
+        <h2>Check Your Registration</h2>
+        <p>Enter your EPIC (Voter ID) number to verify your registration status</p>
+        <div class="voter-input-group">
+          <input type="text" id="epic-input" placeholder="Enter EPIC Number (e.g. ABC1234567)" maxlength="10">
+          <button class="btn-primary" onclick="checkVoter()">Verify ➤</button>
+        </div>
+        <div id="voter-result"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- CANDIDATE MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
+  <div class="modal" id="candidate-modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
