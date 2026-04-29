@@ -23,9 +23,14 @@ document.querySelectorAll('.nav-link').forEach(link => {
 });
 
 function switchView(view) {
+  if (window.trackView) window.trackView(view);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const el = document.getElementById('view-' + view);
   if (el) el.classList.add('active');
+  
+  document.querySelectorAll('.nav-link').forEach(l => l.removeAttribute('aria-current'));
+  const activeLink = document.querySelector(`.nav-link[data-view="${view}"]`);
+  if (activeLink) activeLink.setAttribute('aria-current', 'page');
 
   const loaders = {
     journey:    loadJourney,
@@ -42,7 +47,13 @@ function switchView(view) {
 
 // Mobile sidebar
 document.getElementById('hamburger').addEventListener('click', () => {
-  document.getElementById('sidebar').classList.toggle('open');
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('open');
+  const hamburger = document.getElementById('hamburger');
+  if (hamburger) {
+    hamburger.setAttribute('aria-expanded', 
+      sidebar.classList.contains('open') ? 'true' : 'false');
+  }
 });
 
 function closeSidebar() {
@@ -67,6 +78,9 @@ async function sendMessage() {
   userProfile.language = lang;
 
   showTyping();
+  
+  const sendBtn = document.getElementById('send-btn');
+  if (sendBtn) sendBtn.disabled = true;
 
   try {
     const res = await fetch(`${API}/api/chat`, {
@@ -81,6 +95,8 @@ async function sendMessage() {
   } catch (err) {
     removeTyping();
     appendMessage('assistant', '⚠️ Connection error. Please ensure the backend is running.');
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 

@@ -7,14 +7,43 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
+
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-ELECTIQ2026"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-ELECTIQ2026');
+  // Track view switches as page_view events
+  window.trackView = function(viewName) {
+    gtag('event', 'page_view', { page_title: viewName, page_path: '/' + viewName });
+  };
+</script>
+
+<!-- Google Translate -->
+<script type="text/javascript">
+  function googleTranslateElementInit() {
+    new google.translate.TranslateElement({
+      pageLanguage: 'en',
+      includedLanguages: 'hi,ta,te,bn,mr,gu,kn,ml,pa,ur',
+      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+      autoDisplay: false
+    }, 'google_translate_element');
+  }
+</script>
+<script type="text/javascript"
+  src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit">
+</script>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
 <!-- NOISE OVERLAY -->
 <div class="noise"></div>
 
 <!-- SIDEBAR NAV -->
-<nav class="sidebar" id="sidebar">
+<nav class="sidebar" id="sidebar" aria-label="Main navigation">
   <div class="sidebar-brand">
     <div class="brand-icon">⚡</div>
     <div>
@@ -24,8 +53,8 @@
   </div>
 
   <div class="nav-section-label">FEATURES</div>
-  <ul class="nav-links">
-    <li><a href="#" class="nav-link active" data-view="chat"><span class="nav-icon">💬</span>AI Assistant</a></li>
+  <ul class="nav-links" role="list">
+    <li><a href="#" class="nav-link active" data-view="chat" aria-current="page"><span class="nav-icon">💬</span>AI Assistant</a></li>
     <li><a href="#" class="nav-link" data-view="journey"><span class="nav-icon">🗺️</span>Voter Journey</a></li>
     <li><a href="#" class="nav-link" data-view="candidates"><span class="nav-icon">👥</span>Candidates</a></li>
     <li><a href="#" class="nav-link" data-view="compare"><span class="nav-icon">⚖️</span>Compare</a></li>
@@ -36,6 +65,8 @@
     <li><a href="#" class="nav-link" data-view="impact"><span class="nav-icon">💡</span>My Vote Impact</a></li>
     <li><a href="#" class="nav-link" data-view="voter"><span class="nav-icon">🪪</span>Voter Check</a></li>
   </ul>
+
+  <div id="google_translate_element" style="padding:1rem 1.5rem;opacity:0.8"></div>
 
   <div class="sidebar-bottom">
     <div class="sidebar-election-badge">
@@ -50,13 +81,13 @@
 
 <!-- MOBILE HEADER -->
 <header class="mobile-header">
-  <button class="hamburger" id="hamburger">☰</button>
+  <button class="hamburger" id="hamburger" aria-label="Open navigation menu" aria-expanded="false" aria-controls="sidebar">☰</button>
   <div class="mobile-brand">⚡ ElectIQ</div>
   <div></div>
 </header>
 
 <!-- MAIN CONTENT -->
-<main class="main-content">
+<main class="main-content" id="main-content" role="main">
 
   <!-- ── CHAT VIEW ─────────────────────────────── -->
   <section class="view active" id="view-chat">
@@ -65,7 +96,7 @@
       <p class="view-sub">Ask anything about elections, candidates, or your voting rights</p>
     </div>
     <div class="chat-container">
-      <div class="chat-messages" id="chat-messages">
+      <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Chat conversation" aria-atomic="false">
         <div class="chat-message assistant">
           <div class="msg-avatar">⚡</div>
           <div class="msg-bubble">
@@ -83,7 +114,7 @@
       </div>
       <div class="chat-input-area">
         <div class="lang-selector">
-          <select id="lang-select">
+          <select id="lang-select" aria-label="Select response language">
             <option value="English">🇮🇳 English</option>
             <option value="Hindi">हिंदी</option>
             <option value="Tamil">தமிழ்</option>
@@ -93,8 +124,8 @@
           </select>
         </div>
         <div class="input-row">
-          <textarea id="chat-input" placeholder="Ask me anything about elections..." rows="1"></textarea>
-          <button class="send-btn" id="send-btn" onclick="sendMessage()">
+          <textarea id="chat-input" placeholder="Ask me anything about elections..." rows="1" aria-label="Type your election question here"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()" aria-label="Send message">
             <span>➤</span>
           </button>
         </div>
@@ -144,6 +175,7 @@
     <div class="booth-container" id="booth-container">
       <!-- Populated by JS -->
     </div>
+    <div id="booth-map" style="width:100%;height:380px;border-radius:12px;margin-top:1.5rem;background:#1a1a2e;" aria-label="Polling booth map" role="img"></div>
   </section>
 
   <!-- ── WAR ROOM VIEW ─────────────────────────── -->
@@ -202,7 +234,9 @@
         <h2>Check Your Registration</h2>
         <p>Enter your EPIC (Voter ID) number to verify your registration status</p>
         <div class="voter-input-group">
-          <input type="text" id="epic-input" placeholder="Enter EPIC Number (e.g. ABC1234567)" maxlength="10">
+          <label for="epic-input" class="sr-only">EPIC Voter ID Number</label>
+          <input type="text" id="epic-input" placeholder="Enter EPIC Number (e.g. ABC1234567)" maxlength="10" autocomplete="off" aria-describedby="epic-hint">
+          <div id="epic-hint" class="sr-only">Enter your 10-character voter ID starting with 3 letters followed by 7 digits</div>
           <button class="btn-primary" onclick="checkVoter()">Verify ➤</button>
         </div>
         <div id="voter-result"></div>
@@ -214,12 +248,66 @@
 
 <!-- CANDIDATE MODAL -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
-  <div class="modal" id="candidate-modal" onclick="event.stopPropagation()">
-    <button class="modal-close" onclick="closeModal()">✕</button>
+  <div class="modal" id="candidate-modal" role="dialog" aria-modal="true" aria-label="Candidate details" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()" aria-label="Close dialog">✕</button>
     <div id="modal-content"></div>
   </div>
 </div>
 
 <script src="/static/js/app.js"></script>
+<script>
+  // Google Maps loader — loaded lazily when booth view opens
+  window.initBoothMap = function() {
+    const mapEl = document.getElementById('booth-map');
+    if (!mapEl || !window.google) return;
+    const map = new google.maps.Map(mapEl, {
+      zoom: 13,
+      center: { lat: 19.1136, lng: 72.8697 },
+      mapTypeControl: false,
+      streetViewControl: false
+    });
+    window._boothMap = map;
+    const booths = [
+      { lat: 19.1136, lng: 72.8697, name: 'Government School, Andheri West', queue: 'Short' },
+      { lat: 19.1217, lng: 72.8120, name: 'Municipal Corporation Hall, Versova', queue: 'Moderate' },
+      { lat: 19.1353, lng: 72.8345, name: 'Community Centre, Lokhandwala', queue: 'Long' }
+    ];
+    const queueColors = { Short: '#16a34a', Moderate: '#d97706', Long: '#dc2626' };
+    booths.forEach(b => {
+      const marker = new google.maps.Marker({
+        position: { lat: b.lat, lng: b.lng },
+        map,
+        title: b.name,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 12,
+          fillColor: queueColors[b.queue] || '#6366f1',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2
+        }
+      });
+      const infoWindow = new google.maps.InfoWindow({
+        content: `<div style="font-family:sans-serif;padding:4px"><strong>${b.name}</strong><br>Queue: <span style="color:${queueColors[b.queue]}">${b.queue}</span><br><a href="https://maps.google.com/?q=${b.lat},${b.lng}" target="_blank">Get Directions ↗</a></div>`
+      });
+      marker.addListener('click', () => infoWindow.open(map, marker));
+    });
+    // Try geolocation
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        new google.maps.Marker({
+          position: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          map,
+          title: 'Your Location',
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#6366f1', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 }
+        });
+      }, () => {});
+    }
+  };
+</script>
+<script async defer
+  src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&callback=initBoothMap">
+</script>
 </body>
 </html>

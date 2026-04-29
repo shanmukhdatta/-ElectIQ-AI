@@ -1,24 +1,46 @@
+import json
+import os
+import random
+from datetime import datetime, timedelta
+import bleach
+import re
+import logging
+
 from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-import json
-import os
-import random
-from datetime import datetime, timedelta
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_caching import Cache
+from flask_compress import Compress
+
+from backend.config import Config
 
 load_dotenv()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__, static_folder="../frontend/static", template_folder="../frontend/templates")
-CORS(app)
 
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
+CORS(app, origins=allowed_origins, methods=['GET', 'POST'], allow_headers=['Content-Type'])
 
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=['200 per day', '50 per hour'])
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': Config.CACHE_TIMEOUT_STATIC})
+Compress(app)
 
-def build_chat_models():
+GROQ_MODEL = Config.GROQ_MODEL
+GEMINI_MODEL = Config.GEMINI_MODEL
+
+def build_chat_models() -> list[tuple[str, object]]:
+    """Build the chat models based on available API keys."""
     models = []
     groq_api_key = os.environ.get("GROQ_API_KEY")
     gemini_api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -29,8 +51,8 @@ def build_chat_models():
             ChatGroq(
                 api_key=groq_api_key,
                 model=GROQ_MODEL,
-                temperature=0.3,
-                max_tokens=1000,
+                temperature=Config.TEMPERATURE,
+                max_tokens=Config.MAX_TOKENS,
             ),
         ))
 
@@ -40,15 +62,24 @@ def build_chat_models():
             ChatGoogleGenerativeAI(
                 google_api_key=gemini_api_key,
                 model=GEMINI_MODEL,
-                temperature=0.3,
-                max_output_tokens=1000,
+                temperature=Config.TEMPERATURE,
+                max_output_tokens=Config.MAX_TOKENS,
             ),
         ))
 
     return models
 
+_CHAT_MODELS = None
 
-def to_langchain_messages(system_prompt, messages):
+def get_chat_models() -> list[tuple[str, object]]:
+    """Get the cached chat models, building them if necessary."""
+    global _CHAT_MODELS
+    if _CHAT_MODELS is None:
+        _CHAT_MODELS = build_chat_models()
+    return _CHAT_MODELS
+
+def to_langchain_messages(system_prompt: str, messages: list[dict]) -> list:
+    """Convert raw messages to Langchain message objects."""
     langchain_messages = [SystemMessage(content=system_prompt)]
 
     for message in messages:
@@ -65,8 +96,8 @@ def to_langchain_messages(system_prompt, messages):
 
     return langchain_messages
 
-
-def response_text(response):
+def response_text(response) -> str:
+    """Extract string text from a model response."""
     content = response.content
     if isinstance(content, str):
         return content
@@ -80,16 +111,16 @@ def response_text(response):
         return "".join(parts).strip()
     return str(content)
 
-
-def invoke_chat(system_prompt, messages):
+def invoke_chat(system_prompt: str, messages: list[dict]) -> tuple[str, str]:
+    """Invoke the chat models using the fallback mechanism."""
     chat_messages = to_langchain_messages(system_prompt, messages)
     errors = []
 
-    for provider, model in build_chat_models():
+    for provider, model in get_chat_models():
         try:
             return response_text(model.invoke(chat_messages)), provider
         except Exception as exc:
-            app.logger.warning("%s chat provider failed: %s", provider, exc)
+            logger.warning("%s chat provider failed: %s", provider, exc)
             errors.append(f"{provider}: {exc}")
 
     raise RuntimeError(
@@ -97,6 +128,14 @@ def invoke_chat(system_prompt, messages):
         "or GOOGLE_API_KEY/GEMINI_API_KEY for the Gemini fallback. "
         f"Provider errors: {' | '.join(errors) if errors else 'none'}"
     )
+
+EPIC_PATTERN = re.compile(r'^[A-Z]{3}[0-9]{7}$')
+
+def sanitise(text: str, max_len: int = 2000) -> str:
+    """Sanitise and truncate user input."""
+    if not text or not isinstance(text, str):
+        return ''
+    return bleach.clean(text.strip())[:max_len]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Election Data
@@ -202,18 +241,30 @@ HISTORY_DATA = [
     {"year": 2024, "winner": "BJP", "margin": 8900, "turnout": 67},
 ]
 
+CONSTITUENCIES = [
+    'Mumbai North', 'Delhi Central', 'Bangalore South',
+    'Chennai North', 'Kolkata East', 'Hyderabad', 'Pune', 'Jaipur'
+]
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
+    """Return the main index page."""
     return render_template("index.html")
 
 @app.route("/api/chat", methods=["POST"])
+@limiter.limit(Config.RATE_LIMIT_CHAT)
 def chat():
-    data = request.json
+    """Handle chat requests with the AI model."""
+    data = request.json or {}
     messages = data.get("messages", [])
+    
+    for m in messages:
+        m['content'] = sanitise(m.get('content', ''), Config.MAX_CHAT_LEN)
+        
     user_profile = data.get("profile", {})
     
     system_prompt = f"""You are ElectIQ — an AI-powered Election Intelligence Assistant for Indian elections.
@@ -221,7 +272,7 @@ You are helpful, politically neutral, factual, and civic-minded. You help citize
 
 Current user profile:
 - State: {user_profile.get('state', 'Not specified')}
-- Constituency: {user_profile.get('constituency', 'Mumbai North (default)')}
+- Constituency: {user_profile.get('constituency', Config.DEFAULT_CONSTITUENCY)}
 - Language preference: {user_profile.get('language', 'English')}
 - First time voter: {user_profile.get('first_time', 'Unknown')}
 
@@ -250,36 +301,46 @@ When comparing candidates, always compare ALL three candidates fairly and equall
     return jsonify({"reply": reply, "provider": provider})
 
 @app.route("/api/candidates", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_CANDIDATES)
 def get_candidates():
-    constituency = request.args.get("constituency", "Mumbai North")
+    """Return the list of candidates for a constituency."""
+    constituency = request.args.get("constituency", Config.DEFAULT_CONSTITUENCY)
     return jsonify({"candidates": CANDIDATES, "constituency": constituency})
 
 @app.route("/api/candidate/<int:cid>", methods=["GET"])
-def get_candidate(cid):
+def get_candidate(cid: int):
+    """Return a single candidate by ID."""
     candidate = next((c for c in CANDIDATES if c["id"] == cid), None)
     if not candidate:
         return jsonify({"error": "Not found"}), 404
     return jsonify(candidate)
 
 @app.route("/api/timeline", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_timeline():
+    """Return the election timeline."""
     return jsonify({"events": ELECTION_TIMELINE})
 
 @app.route("/api/booths", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_booths():
+    """Return the list of polling booths."""
     return jsonify({"booths": BOOTHS})
 
 @app.route("/api/turnout", methods=["GET"])
 def get_turnout():
+    """Return voter turnout data."""
     return jsonify(TURNOUT_DATA)
 
 @app.route("/api/history", methods=["GET"])
 def get_history():
-    constituency = request.args.get("constituency", "Mumbai North")
+    """Return historical election data."""
+    constituency = request.args.get("constituency", Config.DEFAULT_CONSTITUENCY)
     return jsonify({"constituency": constituency, "history": HISTORY_DATA})
 
 @app.route("/api/integrity-score/<int:cid>", methods=["GET"])
-def get_integrity(cid):
+def get_integrity(cid: int):
+    """Return the integrity score breakdown for a candidate."""
     candidate = next((c for c in CANDIDATES if c["id"] == cid), None)
     if not candidate:
         return jsonify({"error": "Not found"}), 404
@@ -294,30 +355,35 @@ def get_integrity(cid):
 
 @app.route("/api/compare", methods=["POST"])
 def compare_candidates():
-    data = request.json
+    """Compare multiple candidates by ID."""
+    data = request.json or {}
     ids = data.get("ids", [1, 2, 3])
     selected = [c for c in CANDIDATES if c["id"] in ids]
     return jsonify({"candidates": selected})
 
 @app.route("/api/voter-check", methods=["POST"])
+@limiter.limit(Config.RATE_LIMIT_VOTER)
 def voter_check():
-    data = request.json
-    epic = data.get("epic", "")
-    if len(epic) >= 6:
-        return jsonify({
-            "registered": True,
-            "name": "Voter Name (Demo)",
-            "constituency": "Mumbai North",
-            "booth": "Government School, Andheri West",
-            "booth_no": "B-073",
-            "serial_no": random.randint(100, 999)
-        })
-    return jsonify({"registered": False, "message": "EPIC number not found"})
+    """Check voter registration using EPIC number."""
+    data = request.json or {}
+    epic = sanitise(data.get("epic", ""), Config.MAX_EPIC_LEN).upper()
+    if not EPIC_PATTERN.match(epic):
+        return jsonify({'registered': False, 'message': 'Invalid EPIC format'}), 400
+    
+    return jsonify({
+        "registered": True,
+        "name": "Voter Name (Demo)",
+        "constituency": Config.DEFAULT_CONSTITUENCY,
+        "booth": "Government School, Andheri West",
+        "booth_no": "B-073",
+        "serial_no": random.randint(100, 999)
+    })
 
 @app.route("/api/impact", methods=["GET"])
 def voter_impact():
+    """Return data showing the impact of a single vote."""
     return jsonify({
-        "constituency": "Mumbai North",
+        "constituency": Config.DEFAULT_CONSTITUENCY,
         "last_margin": 4300,
         "eligible_voters": 180000,
         "turnout_last": 67,
@@ -327,7 +393,9 @@ def voter_impact():
     })
 
 @app.route("/api/quiz", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_quiz():
+    """Return election quiz questions."""
     questions = [
         {
             "q": "What does NOTA stand for?",
@@ -362,5 +430,68 @@ def get_quiz():
     ]
     return jsonify({"questions": questions})
 
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+@app.route('/api/fact-check', methods=['POST'])
+@limiter.limit('5 per minute')
+def fact_check():
+    """AI-powered election fact checker."""
+    data = request.json or {}
+    claim = sanitise(data.get('claim', ''), 500)
+    if not claim:
+        return jsonify({'error': 'No claim provided'}), 400
+    system = (
+        'You are an Indian election fact-checker. '
+        'Respond ONLY with valid JSON (no markdown): '
+        '{"verdict":"TRUE"|"FALSE"|"MISLEADING"|"UNVERIFIABLE",'
+        '"explanation":"one sentence","sources":["url"]}'
+    )
+    try:
+        reply, _ = invoke_chat(system, [{'role': 'user', 'content': claim}])
+        clean = reply.strip().lstrip('```json').rstrip('```').strip()
+        return jsonify(json.loads(clean))
+    except Exception:
+        return jsonify({'verdict': 'UNVERIFIABLE', 'explanation': 'Cannot verify at this time.', 'sources': []})
+
+@app.route('/api/constituencies', methods=['GET'])
+def list_constituencies():
+    """Return filtered list of constituencies."""
+    query = sanitise(request.args.get('q', ''), 100).lower()
+    filtered = [c for c in CONSTITUENCIES if query in c.lower()]
+    return jsonify({'constituencies': filtered})
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to every response."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' fonts.googleapis.com maps.googleapis.com www.googletagmanager.com translate.google.com; "
+        "style-src 'self' 'unsafe-inline' fonts.googleapis.com fonts.gstatic.com; "
+        "font-src fonts.gstatic.com; "
+        "img-src 'self' data: maps.googleapis.com maps.gstatic.com *.googleapis.com www.googletagmanager.com; "
+        "connect-src 'self' maps.googleapis.com www.google-analytics.com;"
+    )
+    return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Handle unhandled exceptions globally."""
+    logger.error('Unhandled exception: %s', e, exc_info=True)
+    return jsonify({'error': 'An internal error occurred'}), 500
+
+@app.errorhandler(404)
+def not_found(e):
+    """Handle 404 errors."""
+    return jsonify({'error': 'Resource not found'}), 404
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit errors."""
+    return jsonify({'error': 'Too many requests. Please slow down.'}), 429
+
+if __name__ == '__main__':
+    required_keys = []  # add key names if you want startup validation
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(debug=debug_mode, port=5000)
