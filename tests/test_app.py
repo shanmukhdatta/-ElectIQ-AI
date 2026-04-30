@@ -158,5 +158,51 @@ def test_chat_endpoint(client, mock_chat, mock_gcp):
         json={"messages": [{"role": "user", "content": "Who are the candidates?"}], "profile": {}},
         content_type="application/json")
     d = json.loads(r.data)
-    assert "reply" in d
     assert len(d["reply"]) > 0
+
+
+def test_turnout_analytics(client):
+    """Test BigQuery analytics endpoint returns expected shape."""
+    r = client.get("/api/turnout/analytics")
+    assert r.status_code == 200
+    d = json.loads(r.data)
+    assert "rows" in d
+    assert "provider" in d
+
+
+def test_turnout_update_valid(client):
+    """Test turnout update with valid value."""
+    r = client.post("/api/turnout/update",
+        json={"current": 45.5},
+        content_type="application/json")
+    assert r.status_code == 200
+    d = json.loads(r.data)
+    assert d.get("success") == True
+
+
+def test_turnout_update_invalid(client):
+    """Test turnout update rejects out-of-range values."""
+    r = client.post("/api/turnout/update",
+        json={"current": 150},
+        content_type="application/json")
+    assert r.status_code == 400
+
+
+def test_entities_endpoint(client, mock_gcp):
+    """Test Google NL entity extraction endpoint."""
+    r = client.post("/api/entities",
+        json={"text": "Prime Minister Modi visited Mumbai North constituency"},
+        content_type="application/json")
+    assert r.status_code == 200
+
+
+def test_verify_photo_valid(client):
+    """Test Cloud Vision photo verification for valid candidate."""
+    r = client.get("/api/verify-photo/1")
+    d = json.loads(r.data)
+    assert "verified" in d
+
+
+def test_verify_photo_invalid(client):
+    """Test Cloud Vision photo verification for non-existent candidate."""
+    assert client.get("/api/verify-photo/999").status_code == 404

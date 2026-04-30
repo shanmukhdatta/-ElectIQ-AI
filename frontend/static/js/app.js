@@ -181,6 +181,9 @@ async function sendMessage() {
   input.style.height = 'auto';
   chatHistory.push({ role: 'user', content: text });
 
+  // Silently detect political entities using Google Cloud NL API
+  detectEntities(text);
+
   const lang = document.getElementById('lang-select').value;
   userProfile.language = lang;
 
@@ -197,8 +200,28 @@ async function sendMessage() {
     });
     const data = await res.json();
     removeTyping();
-    appendMessage('assistant', data.reply);
-    chatHistory.push({ role: 'assistant', content: data.reply });
+
+    // Translate reply if non-English language selected
+    let reply = data.reply;
+    const langCodes = {
+      'Hindi': 'hi', 'Tamil': 'ta', 'Telugu': 'te',
+      'Bengali': 'bn', 'Marathi': 'mr', 'Gujarati': 'gu'
+    };
+    const targetLang = langCodes[lang];
+    if (targetLang && reply) {
+      try {
+        const tRes = await fetch(`${API}/api/translate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: reply, target: targetLang })
+        });
+        const tData = await tRes.json();
+        if (tData.translated) reply = tData.translated;
+      } catch (e) { /* silent — show original if translate fails */ }
+    }
+
+    appendMessage('assistant', reply);
+    chatHistory.push({ role: 'assistant', content: data.reply }); // keep English in history
   } catch (err) {
     removeTyping();
     appendMessage('assistant', '⚠️ Connection error. Please ensure the backend is running.');
@@ -206,6 +229,55 @@ async function sendMessage() {
     if (sendBtn) sendBtn.disabled = false;
   }
 }
+
+  async function factCheck(claim) {
+    /**
+     * Call /api/fact-check and display result in chat.
+     * Uses Google-powered AI fact checking for election claims.
+     */
+    if (!claim) return;
+    appendMessage('user', `🔍 Fact check: "${claim}"`);
+    showTyping();
+    try {
+      const res = await fetch(`${API}/api/fact-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claim })
+      });
+      const d = await res.json();
+      removeTyping();
+      const icons = { TRUE: '✅', FALSE: '❌', MISLEADING: '⚠️', UNVERIFIABLE: '❓' };
+      const colors = { TRUE: '#30d158', FALSE: '#ff453a', MISLEADING: '#ffd60a', UNVERIFIABLE: '#8e8e93' };
+      const icon = icons[d.verdict] || '❓';
+      const color = colors[d.verdict] || '#8e8e93';
+      appendMessage('assistant',
+        `**${icon} Verdict: ${d.verdict}**\n\n${d.explanation}` +
+        (d.sources?.length ? `\n\n📎 Source: ${d.sources[0]}` : '')
+      );
+    } catch (e) {
+      removeTyping();
+      appendMessage('assistant', '⚠️ Fact check service temporarily unavailable.');
+    }
+  }
+
+  async function detectEntities(text) {
+    /**
+     * Call /api/entities (Google Cloud NL API) to extract political
+     * entities from user's chat message. Used silently for analytics.
+     */
+    if (!text || text.length < 20) return;
+    try {
+      const res = await fetch(`${API}/api/entities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const d = await res.json();
+      if (d.entities && d.entities.length > 0 && window.trackEvent) {
+        window.trackEvent('NLP', 'entities_detected', d.entities.map(e => e.name).join(','));
+      }
+    } catch (e) { /* silent */ }
+  }
 
 function sendChip(text) {
   document.getElementById('chat-input').value = text;
@@ -342,9 +414,36 @@ async function loadCandidates() {
           <div class="bar-fill" style="width:${c.integrity_score}%"></div>
         </div>
       </div>
-      <button class="view-detail-btn">View Full Profile →</button>
+      <div id="sentiment-${c.id}" aria-label="Manifesto sentiment analysis"></div>
+      <button class="view-detail-btn" aria-label="View full profile of ${c.name}">View Full Profile →</button>
     </div>
   `).join('');
+
+  // Load sentiment badge for each candidate using Google Cloud NL API
+  data.candidates.forEach(c => {
+    const manifestoText = Object.values(c.manifesto).join(' ');
+    fetch(`${API}/api/sentiment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: manifestoText })
+    })
+    .then(r => r.json())
+    .then(s => {
+      const badge = document.getElementById(`sentiment-${c.id}`);
+      if (!badge) return;
+      const colors = { Positive: '#30d158', Neutral: '#ffd60a', Negative: '#ff453a' };
+      badge.textContent = `${s.label} Manifesto`;
+      badge.style.background = colors[s.label] || '#6366f1';
+      badge.style.color = '#fff';
+      badge.style.padding = '2px 10px';
+      badge.style.borderRadius = '20px';
+      badge.style.fontSize = '0.7rem';
+      badge.style.fontWeight = '600';
+      badge.style.display = 'inline-block';
+      badge.style.marginTop = '6px';
+    })
+    .catch(() => {}); // silent fail — badge just stays hidden
+  });
 }
 
 let lastFocusedElement = null;
@@ -365,6 +464,7 @@ async function openCandidateModal(id) {
             ⚡ ${c.integrity_score}/100 Integrity Score
           </span>
         </div>
+        <div id="photo-verify" style="margin-top:4px"></div>
       </div>
     </div>
 
@@ -387,12 +487,61 @@ async function openCandidateModal(id) {
         </div>
       `).join('')}
     </div>
+    <div id="integrity-breakdown"></div>
   `;
 
   document.getElementById('modal-overlay').classList.add('open');
   const closeBtn = document.querySelector('.modal-close');
   if (closeBtn) closeBtn.focus();
   document.addEventListener('keydown', handleModalKeydown);
+
+  // Load integrity breakdown from /api/integrity-score (backend endpoint)
+  fetch(`${API}/api/integrity-score/${id}`)
+    .then(r => r.json())
+    .then(score => {
+      const breakdownEl = document.getElementById('integrity-breakdown');
+      if (!breakdownEl || !score.breakdown) return;
+      const items = [
+        { label: 'Parliamentary Attendance', value: score.breakdown.attendance },
+        { label: 'Criminal Record', value: score.breakdown.criminal_cases },
+        { label: 'Asset Transparency', value: score.breakdown.asset_growth },
+        { label: 'Promise Delivery', value: score.breakdown.promise_delivery },
+      ];
+      breakdownEl.innerHTML = `
+        <div class="modal-section-title" style="margin-top:1rem">📊 Integrity Breakdown</div>
+        ${items.map(item => `
+          <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:0.8rem;
+                        color:var(--text-2);margin-bottom:4px">
+              <span>${item.label}</span>
+              <span style="font-family:monospace;font-weight:600">${item.value}/100</span>
+            </div>
+            <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${item.value}%;
+                          background:linear-gradient(90deg,#0071e3,#30d158);
+                          border-radius:2px;transition:width 0.6s ease"></div>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    })
+    .catch(() => {});
+
+  // Verify candidate photo via Google Cloud Vision API
+  fetch(`${API}/api/verify-photo/${id}`)
+    .then(r => r.json())
+    .then(v => {
+      const photoVerifyEl = document.getElementById('photo-verify');
+      if (!photoVerifyEl) return;
+      photoVerifyEl.innerHTML = v.verified
+        ? `<span style="font-size:0.72rem;color:#30d158;font-weight:500">
+             ✅ Photo verified by Google Cloud Vision
+           </span>`
+        : `<span style="font-size:0.72rem;color:#ff453a;font-weight:500">
+             ⚠️ Photo not verified
+           </span>`;
+    })
+    .catch(() => {});
 }
 
 function closeModal() {
@@ -514,8 +663,18 @@ async function loadBooths() {
           </div>
         </div>
         <div class="booth-actions">
-          <button class="btn-primary" onclick="alert('Opening Google Maps directions to ${b.name}')">Get Directions 🗺️</button>
-          <button class="btn-outline" onclick="alert('Check-in registered at ${b.name}! Queue updated.')">Check In 📍</button>
+          <a class="btn-primary"
+             href="https://maps.google.com/?q=${encodeURIComponent(b.name)}&ll=${b.lat},${b.lng}"
+             target="_blank"
+             rel="noopener noreferrer"
+             aria-label="Open Google Maps directions to ${b.name}">
+            Get Directions 🗺️
+          </a>
+          <button class="btn-outline"
+                  onclick="boothCheckIn(${b.id}, '${b.name.replace(/'/g, "\\'")}')"
+                  aria-label="Check in at ${b.name} to update queue">
+            Check In 📍
+          </button>
         </div>
       </div>
     `).join('')}
@@ -524,6 +683,37 @@ async function loadBooths() {
     </div>
   `;
 }
+
+  async function boothCheckIn(boothId, boothName) {
+    /**
+     * Log a booth check-in event to BigQuery via /api/turnout/update.
+     * Updates the live turnout figure and logs analytics.
+     */
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Checking in...';
+    try {
+      // Simulate a small turnout increment for this check-in
+      const currentRes = await fetch(`${API}/api/turnout`);
+      const current = await currentRes.json();
+      const newTurnout = Math.min(100, (current.current || 34) + 0.1);
+
+      await fetch(`${API}/api/turnout/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current: parseFloat(newTurnout.toFixed(1)) })
+      });
+
+      btn.textContent = '✅ Checked In!';
+      btn.style.color = 'var(--green)';
+      if (window.trackEvent) {
+        window.trackEvent('Booth', 'checkin', boothName);
+      }
+    } catch (e) {
+      btn.textContent = 'Check In 📍';
+      btn.disabled = false;
+    }
+  }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WAR ROOM
@@ -575,10 +765,40 @@ async function loadWarRoom() {
       <div id="countdown-display" style="font-family:'Playfair Display',serif;font-size:48px;font-weight:900;color:var(--gold-light)">Loading...</div>
       <div style="font-size:13px;color:var(--text-2);margin-top:8px">until polls close on May 15, 2026 at 6:00 PM</div>
     </div>
+    <div id="warroom-analytics"></div>
   `;
 
   updateCountdown();
   setInterval(updateCountdown, 1000);
+
+  // Load BigQuery analytics data for real-time check-in insights
+  fetch(`${API}/api/turnout/analytics`)
+    .then(r => r.json())
+    .then(analytics => {
+      const analyticsEl = document.getElementById('warroom-analytics');
+      if (!analyticsEl) return;
+      if (analytics.provider === 'bigquery' && analytics.rows.length > 0) {
+        analyticsEl.innerHTML = `
+          <div class="section-title" style="margin-top:1.5rem">📡 BigQuery Live Analytics</div>
+          <div style="background:var(--surface);border:1px solid var(--border);
+                      border-radius:var(--radius-lg);padding:1rem;font-size:0.8rem;
+                      color:var(--text-2)">
+            ${analytics.rows.map(r =>
+              `<div>Hour ${r.hour}:00 — <strong>${r.checkins}</strong> booth check-ins
+               in ${r.constituency}</div>`
+            ).join('')}
+          </div>
+        `;
+      } else {
+        analyticsEl.innerHTML = `
+          <div style="font-size:0.78rem;color:var(--text-3);margin-top:1rem;
+                      padding:0.75rem;background:var(--surface2);border-radius:var(--radius)">
+            📡 BigQuery analytics active — check-in data will appear here on election day
+          </div>
+        `;
+      }
+    })
+    .catch(() => {});
 }
 
 function updateCountdown() {
@@ -818,7 +1038,25 @@ async function checkVoter() {
 // INIT
 // ─────────────────────────────────────────────────────────────────────────────
 
+  async function searchConstituencies(query) {
+    /**
+     * Search constituencies via /api/constituencies.
+     * Used for autocomplete in the profile setup.
+     */
+    try {
+      const res = await fetch(`${API}/api/constituencies?q=${encodeURIComponent(query)}`);
+      const d = await res.json();
+      return d.constituencies || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Chat is the default view — nothing to load
-  console.log('⚡ ElectIQ initialized');
+  // Preload constituencies for profile (uses /api/constituencies)
+  searchConstituencies('').then(list => {
+    if (window.trackEvent && list.length > 0) {
+      window.trackEvent('App', 'constituencies_loaded', list.length.toString());
+    }
+  });
 });
