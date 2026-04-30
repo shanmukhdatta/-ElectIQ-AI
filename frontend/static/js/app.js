@@ -347,7 +347,10 @@ async function loadCandidates() {
   `).join('');
 }
 
+let lastFocusedElement = null;
+
 async function openCandidateModal(id) {
+  lastFocusedElement = document.activeElement;
   const res = await fetch(`${API}/api/candidate/${id}`);
   const c = await res.json();
 
@@ -387,10 +390,45 @@ async function openCandidateModal(id) {
   `;
 
   document.getElementById('modal-overlay').classList.add('open');
+  const closeBtn = document.querySelector('.modal-close');
+  if (closeBtn) closeBtn.focus();
+  document.addEventListener('keydown', handleModalKeydown);
 }
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+  document.removeEventListener('keydown', handleModalKeydown);
+  if (lastFocusedElement) {
+    lastFocusedElement.focus();
+    lastFocusedElement = null;
+  }
+}
+
+function handleModalKeydown(e) {
+  if (e.key === 'Escape') {
+    closeModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const modal = document.getElementById('candidate-modal');
+    if (!modal) return;
+    const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        last.focus();
+        e.preventDefault();
+      }
+    } else {
+      if (document.activeElement === last) {
+        first.focus();
+        e.preventDefault();
+      }
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
