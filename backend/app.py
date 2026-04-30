@@ -1,497 +1,555 @@
+"""
+ElectIQ — Flask Application Entry Point
+Election Intelligence Assistant for Indian voters.
+
+Architecture:
+  - Routes: defined here
+  - Data: backend/data.py
+  - Validation: backend/validators.py
+  - Google Cloud: backend/google_services.py
+  - Config: backend/config.py
+"""
 import json
+import logging
 import os
 import random
-from datetime import datetime, timedelta
-import bleach
-import re
-import logging
+import secrets
+import uuid
+from datetime import datetime, timezone
 
-from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask import Flask, g, jsonify, render_template, request
+from flask_caching import Cache
+from flask_compress import Compress
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from flask_caching import Cache
-from flask_compress import Compress
 
 from backend.config import Config
+from backend.data import (
+    BOOTHS, CANDIDATES, CONSTITUENCIES, ELECTION_TIMELINE,
+    HISTORY_DATA, TURNOUT_DATA,
+)
+from backend.validators import (
+    is_valid_epic, is_valid_language_code, sanitise, validate_candidate_ids,
+)
+import backend.google_services as gcp
 
+# ── Initialisation ─────────────────────────────────────────────────────────────
 load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder="../frontend/static", template_folder="../frontend/templates")
+app = Flask(
+    __name__,
+    static_folder="../frontend/static",
+    template_folder="../frontend/templates",
+)
 
-allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
-CORS(app, origins=allowed_origins, methods=['GET', 'POST'], allow_headers=['Content-Type'])
+# Max request size — reject oversized payloads early
+app.config["MAX_CONTENT_LENGTH"] = Config.MAX_REQUEST_SIZE
 
-limiter = Limiter(app=app, key_func=get_remote_address, default_limits=['200 per day', '50 per hour'])
-cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': Config.CACHE_TIMEOUT_STATIC})
+# ── Extensions ─────────────────────────────────────────────────────────────────
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5000").split(",")
+CORS(app, origins=allowed_origins, methods=["GET", "POST"], allow_headers=["Content-Type"])
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[Config.RATE_LIMIT_DEFAULT],
+)
+
+cache = Cache(app, config={
+    "CACHE_TYPE": "SimpleCache",
+    "CACHE_DEFAULT_TIMEOUT": Config.CACHE_TIMEOUT_DEFAULT,
+})
+
 Compress(app)
 
-GROQ_MODEL = Config.GROQ_MODEL
-GEMINI_MODEL = Config.GEMINI_MODEL
+# ── LLM Provider Chain ─────────────────────────────────────────────────────────
+# Tries Groq first (faster), falls back to Gemini. Built once at startup.
 
-def build_chat_models() -> list[tuple[str, object]]:
-    """Build the chat models based on available API keys."""
-    models = []
-    groq_api_key = os.environ.get("GROQ_API_KEY")
-    gemini_api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+_CHAT_MODELS: list | None = None
 
-    if groq_api_key:
-        models.append((
-            "groq",
-            ChatGroq(
-                api_key=groq_api_key,
-                model=GROQ_MODEL,
-                temperature=Config.TEMPERATURE,
-                max_tokens=Config.MAX_TOKENS,
-            ),
-        ))
-
-    if gemini_api_key:
-        models.append((
-            "gemini",
-            ChatGoogleGenerativeAI(
-                google_api_key=gemini_api_key,
-                model=GEMINI_MODEL,
-                temperature=Config.TEMPERATURE,
-                max_output_tokens=Config.MAX_TOKENS,
-            ),
-        ))
-
-    return models
-
-_CHAT_MODELS = None
 
 def get_chat_models() -> list[tuple[str, object]]:
-    """Get the cached chat models, building them if necessary."""
+    """Return cached LLM model list, building once on first call."""
     global _CHAT_MODELS
     if _CHAT_MODELS is None:
-        _CHAT_MODELS = build_chat_models()
+        _CHAT_MODELS = _build_chat_models()
     return _CHAT_MODELS
 
-def to_langchain_messages(system_prompt: str, messages: list[dict]) -> list:
-    """Convert raw messages to Langchain message objects."""
-    langchain_messages = [SystemMessage(content=system_prompt)]
 
-    for message in messages:
-        role = message.get("role")
-        content = message.get("content", "")
+def _build_chat_models() -> list[tuple[str, object]]:
+    """Instantiate configured LLM providers from environment variables."""
+    models = []
+    groq_key = os.environ.get("GROQ_API_KEY")
+    gemini_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+
+    if groq_key:
+        models.append(("groq", ChatGroq(
+            api_key=groq_key, model=Config.GROQ_MODEL,
+            temperature=Config.TEMPERATURE, max_tokens=Config.MAX_TOKENS,
+        )))
+    if gemini_key:
+        models.append(("gemini", ChatGoogleGenerativeAI(
+            google_api_key=gemini_key, model=Config.GEMINI_MODEL,
+            temperature=Config.TEMPERATURE, max_output_tokens=Config.MAX_TOKENS,
+        )))
+    return models
+
+
+def _to_langchain_messages(system_prompt: str, messages: list[dict]) -> list:
+    """Convert {role, content} dicts to LangChain message objects."""
+    result = [SystemMessage(content=system_prompt)]
+    for msg in messages:
+        role, content = msg.get("role"), msg.get("content", "")
         if not content:
             continue
         if role == "assistant":
-            langchain_messages.append(AIMessage(content=content))
+            result.append(AIMessage(content=content))
         elif role == "system":
-            langchain_messages.append(SystemMessage(content=content))
+            result.append(SystemMessage(content=content))
         else:
-            langchain_messages.append(HumanMessage(content=content))
+            result.append(HumanMessage(content=content))
+    return result
 
-    return langchain_messages
 
-def response_text(response) -> str:
-    """Extract string text from a model response."""
+def _response_text(response) -> str:
+    """Extract plain text from a LangChain model response."""
     content = response.content
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, str):
-                parts.append(part)
-            elif isinstance(part, dict):
-                parts.append(part.get("text", ""))
-        return "".join(parts).strip()
+        return "".join(
+            p if isinstance(p, str) else p.get("text", "")
+            for p in content
+        ).strip()
     return str(content)
 
+
 def invoke_chat(system_prompt: str, messages: list[dict]) -> tuple[str, str]:
-    """Invoke the chat models using the fallback mechanism."""
-    chat_messages = to_langchain_messages(system_prompt, messages)
-    errors = []
+    """
+    Invoke the best available LLM provider with fallback chain.
+
+    Args:
+        system_prompt: The system instruction for the AI model.
+        messages: List of {role, content} conversation messages.
+
+    Returns:
+        Tuple of (response_text, provider_name).
+
+    Raises:
+        RuntimeError: If all configured providers fail.
+    """
+    langchain_msgs = _to_langchain_messages(system_prompt, messages)
+    errors: list[str] = []
 
     for provider, model in get_chat_models():
         try:
-            return response_text(model.invoke(chat_messages)), provider
+            return _response_text(model.invoke(langchain_msgs)), provider
         except Exception as exc:
-            logger.warning("%s chat provider failed: %s", provider, exc)
+            logger.warning("%s provider failed: %s", provider, exc)
             errors.append(f"{provider}: {exc}")
 
     raise RuntimeError(
-        "No chat provider succeeded. Configure GROQ_API_KEY for the primary provider "
-        "or GOOGLE_API_KEY/GEMINI_API_KEY for the Gemini fallback. "
-        f"Provider errors: {' | '.join(errors) if errors else 'none'}"
+        f"All LLM providers failed. Configure GROQ_API_KEY or GOOGLE_API_KEY. "
+        f"Errors: {' | '.join(errors)}"
     )
 
-EPIC_PATTERN = re.compile(r'^[A-Z]{3}[0-9]{7}$')
 
-def sanitise(text: str, max_len: int = 2000) -> str:
-    """Sanitise and truncate user input."""
-    if not text or not isinstance(text, str):
-        return ''
-    return bleach.clean(text.strip())[:max_len]
+# ── Request Lifecycle Hooks ────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Mock Election Data
-# ─────────────────────────────────────────────────────────────────────────────
+@app.before_request
+def attach_request_id() -> None:
+    """Attach a unique 8-char request ID for tracing and logging."""
+    g.request_id = str(uuid.uuid4())[:8]
+    g.csp_nonce = secrets.token_urlsafe(16)
 
-CANDIDATES = [
-    {
-        "id": 1,
-        "name": "Aarav Mehta",
-        "party": "Progressive Alliance",
-        "party_color": "#2563eb",
-        "constituency": "Mumbai North",
-        "photo": "👨‍💼",
-        "education": "LLB, Delhi University",
-        "assets": "₹2.4 Cr",
-        "criminal_cases": 0,
-        "attendance": "87%",
-        "integrity_score": 82,
-        "manifesto": {
-            "education": "Free university education for all students below poverty line",
-            "healthcare": "Universal healthcare coverage under ₹500/month",
-            "economy": "IT corridor expansion creating 50,000 jobs",
-            "environment": "30% renewable energy by 2030",
-            "infrastructure": "Metro expansion to all major suburbs"
-        }
-    },
-    {
-        "id": 2,
-        "name": "Priya Sharma",
-        "party": "National Unity Front",
-        "party_color": "#dc2626",
-        "constituency": "Mumbai North",
-        "photo": "👩‍💼",
-        "education": "MBA, IIM Ahmedabad",
-        "assets": "₹1.1 Cr",
-        "criminal_cases": 0,
-        "attendance": "92%",
-        "integrity_score": 91,
-        "manifesto": {
-            "education": "Smart classrooms in every government school",
-            "healthcare": "1000 new primary health centres",
-            "economy": "MSME support fund of ₹500 Cr",
-            "environment": "Plant 10 million trees in 5 years",
-            "infrastructure": "Highway expansion and rural connectivity"
-        }
-    },
-    {
-        "id": 3,
-        "name": "Rajesh Kumar",
-        "party": "Peoples Democratic Party",
-        "party_color": "#16a34a",
-        "constituency": "Mumbai North",
-        "photo": "🧑‍💼",
-        "education": "BA Political Science, Mumbai University",
-        "assets": "₹78 Lakh",
-        "criminal_cases": 1,
-        "attendance": "74%",
-        "integrity_score": 63,
-        "manifesto": {
-            "education": "Scholarship for SC/ST students in private colleges",
-            "healthcare": "Free medicines for BPL families",
-            "economy": "Farm loan waiver and minimum support price reform",
-            "environment": "Ban single-use plastic by 2026",
-            "infrastructure": "Rural roads under PM Gram Sadak Yojana 2.0"
-        }
-    }
-]
 
-ELECTION_TIMELINE = [
-    {"event": "Voter Registration Opens", "date": "2026-04-01", "status": "completed"},
-    {"event": "Voter Registration Closes", "date": "2026-04-20", "status": "completed"},
-    {"event": "Candidate Nomination", "date": "2026-04-25", "status": "completed"},
-    {"event": "Campaign Period", "date": "2026-05-01", "status": "upcoming"},
-    {"event": "Polling Day", "date": "2026-05-15", "status": "upcoming"},
-    {"event": "Result Declaration", "date": "2026-05-18", "status": "upcoming"}
-]
+@app.after_request
+def add_security_headers(response):
+    """Add OWASP-recommended security headers to every response."""
+    nonce = getattr(g, "csp_nonce", "")
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+    response.headers["Content-Security-Policy"] = (
+        f"default-src 'self'; "
+        f"script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+        f"fonts.googleapis.com maps.googleapis.com www.googletagmanager.com "
+        f"translate.google.com; "
+        f"style-src 'self' 'unsafe-inline' fonts.googleapis.com fonts.gstatic.com; "
+        f"font-src fonts.gstatic.com; "
+        f"img-src 'self' data: maps.googleapis.com maps.gstatic.com *.googleapis.com; "
+        f"connect-src 'self' maps.googleapis.com www.google-analytics.com; "
+        f"frame-src translate.google.com;"
+    )
+    logger.info("[%s] %s %s → %d", getattr(g, "request_id", "?"),
+                request.method, request.path, response.status_code)
+    return response
 
-TURNOUT_DATA = {
-    "current": 34,
-    "last_election": 67,
-    "national_avg": 61,
-    "constituency": "Mumbai North",
-    "hours": [
-        {"hour": "7AM", "turnout": 8},
-        {"hour": "9AM", "turnout": 18},
-        {"hour": "11AM", "turnout": 28},
-        {"hour": "1PM", "turnout": 34},
-        {"hour": "3PM", "turnout": None},
-        {"hour": "5PM", "turnout": None},
-        {"hour": "6PM", "turnout": None},
-    ]
-}
 
-BOOTHS = [
-    {"id": 1, "name": "Government School, Andheri West", "ward": "Ward 71", "officer": "Smt. Lalitha Devi", "queue": "Short (5-10 min)", "accessibility": True, "lat": 19.1136, "lng": 72.8697},
-    {"id": 2, "name": "Municipal Corporation Hall, Versova", "ward": "Ward 72", "officer": "Shri. Ramesh Patil", "queue": "Moderate (15-20 min)", "accessibility": True, "lat": 19.1217, "lng": 72.8120},
-    {"id": 3, "name": "Community Centre, Lokhandwala", "ward": "Ward 73", "officer": "Smt. Kavita Singh", "queue": "Long (30+ min)", "accessibility": False, "lat": 19.1353, "lng": 72.8345}
-]
+# ── Error Handlers ─────────────────────────────────────────────────────────────
 
-HISTORY_DATA = [
-    {"year": 2014, "winner": "BJP", "margin": 12000, "turnout": 58},
-    {"year": 2019, "winner": "Congress", "margin": 4300, "turnout": 63},
-    {"year": 2024, "winner": "BJP", "margin": 8900, "turnout": 67},
-]
+@app.errorhandler(Exception)
+def handle_exception(exc: Exception):
+    """Catch-all handler — never expose stack traces in production."""
+    logger.error("Unhandled exception [%s]: %s", getattr(g, "request_id", "?"), exc, exc_info=True)
+    return jsonify({"error": "An internal error occurred", "request_id": getattr(g, "request_id", "")}), 500
 
-CONSTITUENCIES = [
-    'Mumbai North', 'Delhi Central', 'Bangalore South',
-    'Chennai North', 'Kolkata East', 'Hyderabad', 'Pune', 'Jaipur'
-]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────────────────────────────────────
+@app.errorhandler(404)
+def not_found(_):
+    return jsonify({"error": "Resource not found"}), 404
+
+
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify({"error": "Request payload too large"}), 413
+
+
+@app.errorhandler(429)
+def ratelimit_handler(_):
+    return jsonify({"error": "Too many requests. Please slow down."}), 429
+
+
+# ── Helper ─────────────────────────────────────────────────────────────────────
+
+def api_ok(data: dict) -> tuple:
+    """Wrap a successful response in a consistent envelope."""
+    return jsonify({"success": True, "data": data,
+                    "timestamp": datetime.now(timezone.utc).isoformat()}), 200
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ROUTES
+# ════════════════════════════════════════════════════════════════════════════════
 
 @app.route("/")
 def index():
-    """Return the main index page."""
+    """Serve the single-page application."""
     return render_template("index.html")
+
+
+# ── Chat ───────────────────────────────────────────────────────────────────────
 
 @app.route("/api/chat", methods=["POST"])
 @limiter.limit(Config.RATE_LIMIT_CHAT)
 def chat():
-    """Handle chat requests with the AI model."""
+    """
+    Main AI chat endpoint. Sanitises input, invokes LLM, logs to BigQuery.
+    Supports multilingual responses via user profile language setting.
+    """
     data = request.json or {}
-    messages = data.get("messages", [])
-    
-    for m in messages:
-        m['content'] = sanitise(m.get('content', ''), Config.MAX_CHAT_LEN)
-        
-    user_profile = data.get("profile", {})
-    
+    messages: list[dict] = data.get("messages", [])
+    profile: dict = data.get("profile", {})
+
+    # Sanitise every message in the conversation
+    for msg in messages:
+        msg["content"] = sanitise(msg.get("content", ""), Config.MAX_CHAT_MESSAGE_LEN)
+
     system_prompt = f"""You are ElectIQ — an AI-powered Election Intelligence Assistant for Indian elections.
-You are helpful, politically neutral, factual, and civic-minded. You help citizens understand elections, voting processes, candidates, and their democratic rights.
+You are helpful, politically neutral, factual, and civic-minded.
 
-Current user profile:
-- State: {user_profile.get('state', 'Not specified')}
-- Constituency: {user_profile.get('constituency', Config.DEFAULT_CONSTITUENCY)}
-- Language preference: {user_profile.get('language', 'English')}
-- First time voter: {user_profile.get('first_time', 'Unknown')}
+User profile:
+- State: {sanitise(profile.get('state', 'Not specified'), 50)}
+- Constituency: {sanitise(profile.get('constituency', Config.DEFAULT_CONSTITUENCY), 100)}
+- Language: {sanitise(profile.get('language', 'English'), 20)}
+- First-time voter: {profile.get('first_time', False)}
 
-You have access to the following real data:
+Available data:
 CANDIDATES: {json.dumps(CANDIDATES, ensure_ascii=False)}
 ELECTION TIMELINE: {json.dumps(ELECTION_TIMELINE, ensure_ascii=False)}
 POLLING BOOTHS: {json.dumps(BOOTHS, ensure_ascii=False)}
 
-Key rules:
+Rules:
 1. Always be politically NEUTRAL — present all candidates equally
-2. For booth locations, suggest the user use the Booth Finder feature
-3. For registration, guide them step by step
-4. For candidate comparison, be data-driven and factual
-5. Keep responses concise and friendly
-6. If asked about policies, compare ALL candidates fairly
-7. Encourage voting and civic participation
-8. Use markdown formatting with emojis where appropriate
-
-When comparing candidates, always compare ALL three candidates fairly and equally."""
+2. Be data-driven and factual; cite ElectIQ Integrity Scores
+3. For voter registration, always direct to: {Config.ECI_PORTAL} and {Config.NVSP_PORTAL}
+4. Voter Helpline: {Config.VOTER_HELPLINE} (toll-free)
+5. For booth locations, recommend the Booth Finder feature
+6. Use markdown with emojis for clarity
+7. Keep responses concise and friendly"""
 
     try:
         reply, provider = invoke_chat(system_prompt, messages)
+        # Log chat event to BigQuery (non-blocking)
+        gcp.log_event_to_bigquery("chat_message", {
+            "constituency": profile.get("constituency", Config.DEFAULT_CONSTITUENCY),
+            "provider": provider,
+            "session_id": getattr(g, "request_id", ""),
+        })
+        return jsonify({"reply": reply, "provider": provider})
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
-    return jsonify({"reply": reply, "provider": provider})
+
+# ── Candidates ────────────────────────────────────────────────────────────────
 
 @app.route("/api/candidates", methods=["GET"])
 @cache.cached(timeout=Config.CACHE_TIMEOUT_CANDIDATES)
 def get_candidates():
-    """Return the list of candidates for a constituency."""
-    constituency = request.args.get("constituency", Config.DEFAULT_CONSTITUENCY)
+    """Return all candidates, optionally filtered by constituency."""
+    constituency = sanitise(request.args.get("constituency", Config.DEFAULT_CONSTITUENCY), 100)
     return jsonify({"candidates": CANDIDATES, "constituency": constituency})
+
 
 @app.route("/api/candidate/<int:cid>", methods=["GET"])
 def get_candidate(cid: int):
     """Return a single candidate by ID."""
     candidate = next((c for c in CANDIDATES if c["id"] == cid), None)
     if not candidate:
-        return jsonify({"error": "Not found"}), 404
+        return jsonify({"error": "Candidate not found"}), 404
     return jsonify(candidate)
+
+
+# ── Static Data ───────────────────────────────────────────────────────────────
 
 @app.route("/api/timeline", methods=["GET"])
 @cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_timeline():
-    """Return the election timeline."""
+    """Return election timeline events."""
     return jsonify({"events": ELECTION_TIMELINE})
+
 
 @app.route("/api/booths", methods=["GET"])
 @cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_booths():
-    """Return the list of polling booths."""
+    """Return polling booth data for the default constituency."""
     return jsonify({"booths": BOOTHS})
 
-@app.route("/api/turnout", methods=["GET"])
-def get_turnout():
-    """Return voter turnout data."""
-    return jsonify(TURNOUT_DATA)
 
 @app.route("/api/history", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def get_history():
-    """Return historical election data."""
-    constituency = request.args.get("constituency", Config.DEFAULT_CONSTITUENCY)
+    """Return electoral history for a constituency."""
+    constituency = sanitise(request.args.get("constituency", Config.DEFAULT_CONSTITUENCY), 100)
     return jsonify({"constituency": constituency, "history": HISTORY_DATA})
+
+
+@app.route("/api/quiz", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
+def get_quiz():
+    """Return civic knowledge quiz questions."""
+    questions = [
+        {"q": "What does NOTA stand for?",
+         "options": ["None Of The Alternatives", "None Of The Above", "No Other Than All", "Not One True Answer"],
+         "answer": 1, "explanation": "NOTA (None Of The Above) allows voters to reject all candidates."},
+        {"q": "What is the minimum age to vote in India?",
+         "options": ["16 years", "18 years", "21 years", "25 years"],
+         "answer": 1, "explanation": "The 61st Constitutional Amendment (1988) lowered the voting age to 18."},
+        {"q": "What is an EPIC number?",
+         "options": ["Electrical Power Index Card", "Elector's Photo Identity Card", "Election Poll Identity Certificate", "Electoral Process Identity Code"],
+         "answer": 1, "explanation": "EPIC is your voter ID card issued by the Election Commission."},
+        {"q": "What is VVPAT?",
+         "options": ["Voter Verified Paper Audit Trail", "Verified Voting Process Automation Tool", "Voter Validity Paper Authentication Terminal", "Vote Verification Process and Audit Track"],
+         "answer": 0, "explanation": "VVPAT provides a paper receipt allowing voters to verify their vote."},
+        {"q": "Who oversees elections in India?",
+         "options": ["President of India", "Supreme Court", "Election Commission of India", "Parliament"],
+         "answer": 2, "explanation": "The ECI is an autonomous constitutional body responsible for elections."},
+    ]
+    return jsonify({"questions": questions})
+
+
+@app.route("/api/impact", methods=["GET"])
+def voter_impact():
+    """Return voter impact statistics for the current constituency."""
+    return jsonify({
+        "constituency": Config.DEFAULT_CONSTITUENCY,
+        "last_margin": 4300, "eligible_voters": 180000,
+        "turnout_last": 67, "your_area_turnout": 54,
+        "national_avg": 61,
+        "message": "In 2019, the winning margin was just 4,300 votes. Every vote truly counts!",
+    })
+
+
+@app.route("/api/compare", methods=["POST"])
+def compare_candidates():
+    """Return side-by-side candidate data for the given IDs."""
+    data = request.json or {}
+    ids = data.get("ids", [1, 2, 3])
+    error = validate_candidate_ids(ids)
+    if error:
+        return jsonify({"error": error}), 400
+    selected = [c for c in CANDIDATES if c["id"] in ids]
+    return jsonify({"candidates": selected})
+
 
 @app.route("/api/integrity-score/<int:cid>", methods=["GET"])
 def get_integrity(cid: int):
-    """Return the integrity score breakdown for a candidate."""
+    """Return a detailed integrity score breakdown for a candidate."""
     candidate = next((c for c in CANDIDATES if c["id"] == cid), None)
     if not candidate:
-        return jsonify({"error": "Not found"}), 404
+        return jsonify({"error": "Candidate not found"}), 404
     breakdown = {
         "asset_growth": random.randint(60, 95),
         "criminal_cases": 100 if candidate["criminal_cases"] == 0 else max(0, 100 - candidate["criminal_cases"] * 30),
         "attendance": int(candidate["attendance"].strip("%")),
         "promise_delivery": random.randint(55, 90),
-        "total": candidate["integrity_score"]
+        "total": candidate["integrity_score"],
     }
     return jsonify({"candidate": candidate["name"], "breakdown": breakdown})
 
-@app.route("/api/compare", methods=["POST"])
-def compare_candidates():
-    """Compare multiple candidates by ID."""
-    data = request.json or {}
-    ids = data.get("ids", [1, 2, 3])
-    selected = [c for c in CANDIDATES if c["id"] in ids]
-    return jsonify({"candidates": selected})
+
+# ── Voter Check ───────────────────────────────────────────────────────────────
 
 @app.route("/api/voter-check", methods=["POST"])
 @limiter.limit(Config.RATE_LIMIT_VOTER)
 def voter_check():
-    """Check voter registration using EPIC number."""
+    """
+    Verify voter registration by EPIC number.
+    Validates format against ECI's official pattern (3 letters + 7 digits).
+    """
     data = request.json or {}
     epic = sanitise(data.get("epic", ""), Config.MAX_EPIC_LEN).upper()
-    if not EPIC_PATTERN.match(epic):
-        return jsonify({'registered': False, 'message': 'Invalid EPIC format'}), 400
-    
+
+    if not is_valid_epic(epic):
+        gcp.log_event_to_bigquery("voter_check_invalid", {"epic_length": len(epic)})
+        return jsonify({"registered": False, "message": "Invalid EPIC format. Expected: ABC1234567"}), 400
+
+    gcp.log_event_to_bigquery("voter_check_success", {"constituency": Config.DEFAULT_CONSTITUENCY})
     return jsonify({
         "registered": True,
         "name": "Voter Name (Demo)",
         "constituency": Config.DEFAULT_CONSTITUENCY,
         "booth": "Government School, Andheri West",
         "booth_no": "B-073",
-        "serial_no": random.randint(100, 999)
+        "serial_no": random.randint(100, 999),
     })
 
-@app.route("/api/impact", methods=["GET"])
-def voter_impact():
-    """Return data showing the impact of a single vote."""
-    return jsonify({
-        "constituency": Config.DEFAULT_CONSTITUENCY,
-        "last_margin": 4300,
-        "eligible_voters": 180000,
-        "turnout_last": 67,
-        "your_area_turnout": 54,
-        "national_avg": 61,
-        "message": "In 2019, the winning margin was just 4,300 votes. Every vote truly counts!"
-    })
 
-@app.route("/api/quiz", methods=["GET"])
-@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
-def get_quiz():
-    """Return election quiz questions."""
-    questions = [
-        {
-            "q": "What does NOTA stand for?",
-            "options": ["None Of The Alternatives", "None Of The Above", "No Other Than All", "Not One True Answer"],
-            "answer": 1,
-            "explanation": "NOTA (None Of The Above) allows voters to reject all candidates while still participating."
-        },
-        {
-            "q": "What is the minimum age to vote in India?",
-            "options": ["16 years", "18 years", "21 years", "25 years"],
-            "answer": 1,
-            "explanation": "The 61st Constitutional Amendment (1988) lowered the voting age from 21 to 18."
-        },
-        {
-            "q": "What is an EPIC number?",
-            "options": ["Electrical Power Index Card", "Elector's Photo Identity Card", "Election Poll Identity Certificate", "Electoral Process Identity Code"],
-            "answer": 1,
-            "explanation": "EPIC (Elector's Photo Identity Card) is your voter ID issued by the Election Commission."
-        },
-        {
-            "q": "What is VVPAT?",
-            "options": ["Voter Verified Paper Audit Trail", "Verified Voting Process Automation Tool", "Voter Validity Paper Authentication Terminal", "Vote Verification Process and Audit Track"],
-            "answer": 0,
-            "explanation": "VVPAT provides a paper receipt allowing voters to verify their vote was cast correctly."
-        },
-        {
-            "q": "Who oversees elections in India?",
-            "options": ["President of India", "Supreme Court", "Election Commission of India", "Parliament"],
-            "answer": 2,
-            "explanation": "The Election Commission of India (ECI) is an autonomous constitutional body responsible for administering elections."
-        }
-    ]
-    return jsonify({"questions": questions})
+# ── Turnout (Firebase + BigQuery) ─────────────────────────────────────────────
 
-@app.route('/api/fact-check', methods=['POST'])
-@limiter.limit('5 per minute')
-def fact_check():
-    """AI-powered election fact checker."""
+@app.route("/api/turnout", methods=["GET"])
+def get_turnout():
+    """Return live turnout data from Firebase Firestore with in-memory fallback."""
+    return jsonify(gcp.get_live_turnout(TURNOUT_DATA))
+
+
+@app.route("/api/turnout/update", methods=["POST"])
+@limiter.limit("5 per minute")
+def update_turnout():
+    """Update live turnout figure in Firebase Firestore."""
     data = request.json or {}
-    claim = sanitise(data.get('claim', ''), 500)
+    current = data.get("current")
+    if not isinstance(current, (int, float)) or not (0 <= current <= 100):
+        return jsonify({"error": "Invalid turnout value (must be 0–100)"}), 400
+    result = gcp.update_live_turnout({"current": current}, TURNOUT_DATA)
+    return jsonify(result)
+
+
+@app.route("/api/turnout/analytics", methods=["GET"])
+def turnout_analytics():
+    """Query BigQuery for aggregated real-time turnout analytics."""
+    data = gcp.query_turnout_analytics()
+    return jsonify(data)
+
+
+# ── Google Cloud AI/ML APIs ───────────────────────────────────────────────────
+
+@app.route("/api/sentiment", methods=["POST"])
+@limiter.limit(Config.RATE_LIMIT_AI)
+def analyse_sentiment():
+    """
+    Analyse sentiment of election text using Google Cloud Natural Language API.
+    Used to score candidate manifesto tone on candidate cards.
+    """
+    data = request.json or {}
+    text = sanitise(data.get("text", ""), 1000)
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+    return jsonify(gcp.analyse_text_sentiment(text))
+
+
+@app.route("/api/entities", methods=["POST"])
+@limiter.limit(Config.RATE_LIMIT_AI)
+def analyse_entities():
+    """Extract named political entities from election text via Google NL API."""
+    data = request.json or {}
+    text = sanitise(data.get("text", ""), 1000)
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+    return jsonify(gcp.analyse_entities(text))
+
+
+@app.route("/api/translate", methods=["POST"])
+@limiter.limit("15 per minute")
+def translate():
+    """
+    Translate election content to regional Indian languages.
+    Uses Google Cloud Translation API v2 with graceful fallback.
+    """
+    data = request.json or {}
+    text = sanitise(data.get("text", ""), 500)
+    target = sanitise(data.get("target", "hi"), 5)
+
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+    if not is_valid_language_code(target):
+        return jsonify({"error": "Unsupported language code"}), 400
+
+    return jsonify(gcp.translate_text(text, target))
+
+
+@app.route("/api/fact-check", methods=["POST"])
+@limiter.limit("5 per minute")
+def fact_check():
+    """
+    AI-powered election fact checker.
+    Returns verdict (TRUE/FALSE/MISLEADING/UNVERIFIABLE) with explanation.
+    """
+    data = request.json or {}
+    claim = sanitise(data.get("claim", ""), Config.MAX_CLAIM_LEN)
     if not claim:
-        return jsonify({'error': 'No claim provided'}), 400
+        return jsonify({"error": "No claim provided"}), 400
+
     system = (
-        'You are an Indian election fact-checker. '
-        'Respond ONLY with valid JSON (no markdown): '
+        "You are an Indian election fact-checker. "
+        "Respond ONLY with valid JSON (no markdown backticks): "
         '{"verdict":"TRUE"|"FALSE"|"MISLEADING"|"UNVERIFIABLE",'
-        '"explanation":"one sentence","sources":["url"]}'
+        '"explanation":"one concise sentence","sources":["official_url"]}'
     )
     try:
-        reply, _ = invoke_chat(system, [{'role': 'user', 'content': claim}])
-        clean = reply.strip().lstrip('```json').rstrip('```').strip()
+        reply, _ = invoke_chat(system, [{"role": "user", "content": claim}])
+        clean = reply.strip().lstrip("```json").rstrip("```").strip()
         return jsonify(json.loads(clean))
     except Exception:
-        return jsonify({'verdict': 'UNVERIFIABLE', 'explanation': 'Cannot verify at this time.', 'sources': []})
+        return jsonify({"verdict": "UNVERIFIABLE", "explanation": "Cannot verify at this time.", "sources": []})
 
-@app.route('/api/constituencies', methods=['GET'])
+
+@app.route("/api/verify-photo/<int:cid>", methods=["GET"])
+def verify_photo(cid: int):
+    """Use Google Cloud Vision API to verify candidate photo integrity."""
+    candidate = next((c for c in CANDIDATES if c["id"] == cid), None)
+    if not candidate:
+        return jsonify({"error": "Candidate not found"}), 404
+    return jsonify(gcp.verify_candidate_photo(None, candidate["name"]))
+
+
+# ── Constituencies ────────────────────────────────────────────────────────────
+
+@app.route("/api/constituencies", methods=["GET"])
+@cache.cached(timeout=Config.CACHE_TIMEOUT_STATIC)
 def list_constituencies():
-    """Return filtered list of constituencies."""
-    query = sanitise(request.args.get('q', ''), 100).lower()
+    """Return filtered list of constituencies for search autocomplete."""
+    query = sanitise(request.args.get("q", ""), 100).lower()
     filtered = [c for c in CONSTITUENCIES if query in c.lower()]
-    return jsonify({'constituencies': filtered})
+    return jsonify({"constituencies": filtered})
 
-@app.after_request
-def add_security_headers(response):
-    """Add security headers to every response."""
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' fonts.googleapis.com maps.googleapis.com www.googletagmanager.com translate.google.com; "
-        "style-src 'self' 'unsafe-inline' fonts.googleapis.com fonts.gstatic.com; "
-        "font-src fonts.gstatic.com; "
-        "img-src 'self' data: maps.googleapis.com maps.gstatic.com *.googleapis.com www.googletagmanager.com; "
-        "connect-src 'self' maps.googleapis.com www.google-analytics.com;"
-    )
-    return response
 
-@app.errorhandler(Exception)
-def handle_exception(e):
-    """Handle unhandled exceptions globally."""
-    logger.error('Unhandled exception: %s', e, exc_info=True)
-    return jsonify({'error': 'An internal error occurred'}), 500
+# ── Entry Point ───────────────────────────────────────────────────────────────
 
-@app.errorhandler(404)
-def not_found(e):
-    """Handle 404 errors."""
-    return jsonify({'error': 'Resource not found'}), 404
-
-@app.errorhandler(429)
-def ratelimit_handler(e):
-    """Handle rate limit errors."""
-    return jsonify({'error': 'Too many requests. Please slow down.'}), 429
-
-if __name__ == '__main__':
-    required_keys = []  # add key names if you want startup validation
-    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+if __name__ == "__main__":
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    logger.info("Starting ElectIQ on port 5000 (debug=%s)", debug_mode)
     app.run(debug=debug_mode, port=5000)

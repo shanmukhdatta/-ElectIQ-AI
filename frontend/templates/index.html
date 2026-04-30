@@ -3,9 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ElectIQ — Election Intelligence Assistant</title>
+<meta name="description" content="ElectIQ — AI-powered election intelligence for Indian voters. Find candidates, verify registration, and make informed choices.">
+<meta name="theme-color" content="#0071e3">
+<meta name="color-scheme" content="dark">
+<title>ElectIQ — Election Intelligence</title>
+<link rel="manifest" href="/static/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
 
 <!-- Google Analytics -->
@@ -15,105 +19,264 @@
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-ELECTIQ2026');
-  // Track view switches as page_view events
-  window.trackView = function(viewName) {
-    gtag('event', 'page_view', { page_title: viewName, page_path: '/' + viewName });
-  };
+  window.trackView = function(v) { gtag('event','page_view',{page_title:v,page_path:'/'+v}); };
+  window.trackEvent = function(cat,act,lbl) { gtag('event',act,{event_category:cat,event_label:lbl}); };
 </script>
 
 <!-- Google Translate -->
-<script type="text/javascript">
+<script>
   function googleTranslateElementInit() {
     new google.translate.TranslateElement({
-      pageLanguage: 'en',
-      includedLanguages: 'hi,ta,te,bn,mr,gu,kn,ml,pa,ur',
-      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-      autoDisplay: false
-    }, 'google_translate_element');
+      pageLanguage:'en', includedLanguages:'hi,ta,te,bn,mr,gu,kn,ml,pa',
+      layout: google.translate.TranslateElement.InlineLayout.SIMPLE, autoDisplay:false
+    }, 'translate-widget');
   }
 </script>
-<script type="text/javascript"
-  src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit">
-</script>
+<script async src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </head>
-<body>
+<body class="intro-active">
+
+<!-- ══════════════════════════════════════════════
+     INTRO / LANDING PAGE
+     Shown on first visit. Fades out into main app.
+     ══════════════════════════════════════════════ -->
+<div id="intro-screen" role="dialog" aria-modal="true" aria-label="ElectIQ Welcome Screen">
+
+  <!-- Animated background grid -->
+  <div class="intro-grid" aria-hidden="true">
+    <div class="intro-grid-line"></div>
+    <div class="intro-grid-line"></div>
+    <div class="intro-grid-line"></div>
+    <div class="intro-grid-line"></div>
+    <div class="intro-grid-line"></div>
+  </div>
+
+  <!-- Floating orbs for depth -->
+  <div class="intro-orb intro-orb-1" aria-hidden="true"></div>
+  <div class="intro-orb intro-orb-2" aria-hidden="true"></div>
+  <div class="intro-orb intro-orb-3" aria-hidden="true"></div>
+
+  <!-- Center content -->
+  <div class="intro-content">
+
+    <!-- Badge -->
+    <div class="intro-badge" role="text">
+      <span class="intro-badge-dot" aria-hidden="true"></span>
+      India General Election 2026
+    </div>
+
+    <!-- Logo mark -->
+    <div class="intro-logo" aria-hidden="true">⚡</div>
+
+    <!-- Headline -->
+    <h1 class="intro-headline">
+      <span class="intro-word" style="--i:0">Vote</span>
+      <span class="intro-word intro-word-accent" style="--i:1">Smarter.</span>
+      <br>
+      <span class="intro-word" style="--i:2">Choose</span>
+      <span class="intro-word intro-word-accent" style="--i:3">Better.</span>
+    </h1>
+
+    <!-- Subheadline -->
+    <p class="intro-sub" style="--i:4">
+      AI-powered election intelligence for every Indian voter.<br>
+      Candidates · Booths · Live Turnout · Fact Checking — all in one place.
+    </p>
+
+    <!-- Feature pills -->
+    <div class="intro-pills" aria-label="Key features" style="--i:5">
+      <span class="intro-pill">🤖 AI Assistant</span>
+      <span class="intro-pill">📍 Booth Finder</span>
+      <span class="intro-pill">⚡ Integrity Scores</span>
+      <span class="intro-pill">🔴 Live War Room</span>
+      <span class="intro-pill">🗳️ Voter Check</span>
+    </div>
+
+    <!-- CTA buttons -->
+    <div class="intro-cta" style="--i:6">
+      <button class="intro-enter-btn" id="intro-enter-btn"
+              onclick="enterApp()"
+              aria-label="Enter ElectIQ election intelligence app">
+        <span>Enter ElectIQ</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button class="intro-learn-btn"
+              onclick="scrollToFeatures()"
+              aria-label="Learn more about ElectIQ features">
+        Learn more ↓
+      </button>
+    </div>
+
+    <!-- Stat counters -->
+    <div class="intro-stats" style="--i:7" role="list" aria-label="ElectIQ key statistics">
+      <div class="intro-stat" role="listitem">
+        <div class="intro-stat-val" data-count="96">0</div>
+        <div class="intro-stat-label">Crore Registered Voters</div>
+      </div>
+      <div class="intro-stat-divider" aria-hidden="true"></div>
+      <div class="intro-stat" role="listitem">
+        <div class="intro-stat-val" data-count="543">0</div>
+        <div class="intro-stat-label">Lok Sabha Constituencies</div>
+      </div>
+      <div class="intro-stat-divider" aria-hidden="true"></div>
+      <div class="intro-stat" role="listitem">
+        <div class="intro-stat-val" data-count="100">0</div>
+        <div class="intro-stat-label">% AI-Powered Insights</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature cards row (below fold) -->
+  <div class="intro-features" id="intro-features" aria-label="Feature highlights">
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">🤖</div>
+      <div class="intro-feature-title">AI Election Assistant</div>
+      <div class="intro-feature-desc">Ask anything about candidates, policies, or your voting rights in any Indian language</div>
+    </div>
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">⚡</div>
+      <div class="intro-feature-title">Integrity Scores</div>
+      <div class="intro-feature-desc">Data-driven scores based on attendance, criminal cases, assets, and promise delivery</div>
+    </div>
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">📍</div>
+      <div class="intro-feature-title">Booth Finder + Maps</div>
+      <div class="intro-feature-desc">Real-time queue estimates and Google Maps directions to your polling station</div>
+    </div>
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">🔴</div>
+      <div class="intro-feature-title">Live War Room</div>
+      <div class="intro-feature-desc">Live voter turnout charts updated via Firebase and BigQuery analytics</div>
+    </div>
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">🪪</div>
+      <div class="intro-feature-title">Voter Registration Check</div>
+      <div class="intro-feature-desc">Instantly verify your EPIC number and find your constituency details</div>
+    </div>
+    <div class="intro-feature-card">
+      <div class="intro-feature-icon" aria-hidden="true">🌐</div>
+      <div class="intro-feature-title">11 Indian Languages</div>
+      <div class="intro-feature-desc">Powered by Google Cloud Translation — communicate in your mother tongue</div>
+    </div>
+  </div>
+
+  <!-- Enter app CTA at bottom of features -->
+  <div class="intro-bottom-cta">
+    <button class="intro-enter-btn intro-enter-btn-lg"
+            onclick="enterApp()"
+            aria-label="Enter the ElectIQ app">
+      <span>Start Exploring</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <p class="intro-bottom-note">
+      Free · No login required · 
+      <a href="https://eci.gov.in" target="_blank" rel="noopener noreferrer">
+        Powered by ECI data
+      </a>
+    </p>
+  </div>
+
+  <!-- Skip button for keyboard users -->
+  <button class="intro-skip" onclick="enterApp()" aria-label="Skip intro and enter app">
+    Skip ✕
+  </button>
+
+</div>
+<!-- END INTRO SCREEN -->
+
+<!-- Skip navigation for keyboard users -->
 <a href="#main-content" class="skip-link">Skip to main content</a>
 
-<!-- NOISE OVERLAY -->
-<div class="noise"></div>
-
-<!-- SIDEBAR NAV -->
+<!-- SIDEBAR -->
 <nav class="sidebar" id="sidebar" aria-label="Main navigation">
   <div class="sidebar-brand">
-    <div class="brand-icon">⚡</div>
-    <div>
-      <div class="brand-name">ElectIQ</div>
-      <div class="brand-sub">Election Intelligence</div>
+    <div class="brand-mark">⚡</div>
+    <div class="brand-text">
+      <span class="brand-name">ElectIQ</span>
+      <span class="brand-tagline">Election Intelligence</span>
     </div>
   </div>
 
   <div class="nav-section-label">FEATURES</div>
   <ul class="nav-links" role="list">
-    <li><a href="#" class="nav-link active" data-view="chat" aria-current="page"><span class="nav-icon">💬</span>AI Assistant</a></li>
-    <li><a href="#" class="nav-link" data-view="journey"><span class="nav-icon">🗺️</span>Voter Journey</a></li>
-    <li><a href="#" class="nav-link" data-view="candidates"><span class="nav-icon">👥</span>Candidates</a></li>
-    <li><a href="#" class="nav-link" data-view="compare"><span class="nav-icon">⚖️</span>Compare</a></li>
-    <li><a href="#" class="nav-link" data-view="booth"><span class="nav-icon">📍</span>Find Booth</a></li>
-    <li><a href="#" class="nav-link" data-view="warroom"><span class="nav-icon">🔴</span>War Room</a></li>
-    <li><a href="#" class="nav-link" data-view="history"><span class="nav-icon">📈</span>Time Machine</a></li>
-    <li><a href="#" class="nav-link" data-view="quiz"><span class="nav-icon">🎯</span>Civic Quiz</a></li>
-    <li><a href="#" class="nav-link" data-view="impact"><span class="nav-icon">💡</span>My Vote Impact</a></li>
-    <li><a href="#" class="nav-link" data-view="voter"><span class="nav-icon">🪪</span>Voter Check</a></li>
+    <li><a href="#" class="nav-link active" data-view="chat" aria-current="page"><span class="nav-icon" aria-hidden="true">💬</span>AI Assistant</a></li>
+    <li><a href="#" class="nav-link" data-view="journey"><span class="nav-icon" aria-hidden="true">🗺️</span>Voter Journey</a></li>
+    <li><a href="#" class="nav-link" data-view="candidates"><span class="nav-icon" aria-hidden="true">👥</span>Candidates</a></li>
+    <li><a href="#" class="nav-link" data-view="compare"><span class="nav-icon" aria-hidden="true">⚖️</span>Compare</a></li>
+    <li><a href="#" class="nav-link" data-view="booth"><span class="nav-icon" aria-hidden="true">📍</span>Find Booth</a></li>
+    <li><a href="#" class="nav-link" data-view="warroom"><span class="nav-icon" aria-hidden="true">🔴</span>War Room</a></li>
+    <li><a href="#" class="nav-link" data-view="history"><span class="nav-icon" aria-hidden="true">📈</span>Time Machine</a></li>
+    <li><a href="#" class="nav-link" data-view="quiz"><span class="nav-icon" aria-hidden="true">🎯</span>Civic Quiz</a></li>
+    <li><a href="#" class="nav-link" data-view="impact"><span class="nav-icon" aria-hidden="true">💡</span>Vote Impact</a></li>
+    <li><a href="#" class="nav-link" data-view="voter"><span class="nav-icon" aria-hidden="true">🪪</span>Voter Check</a></li>
   </ul>
 
-  <div id="google_translate_element" style="padding:1rem 1.5rem;opacity:0.8"></div>
-
-  <div class="sidebar-bottom">
-    <div class="sidebar-election-badge">
-      <div class="badge-dot pulse-dot"></div>
-      <div>
-        <div class="badge-text">Election Day</div>
-        <div class="badge-date">May 15, 2026</div>
+  <div class="sidebar-footer">
+    <div id="translate-widget" class="translate-container" aria-label="Page translation"></div>
+    <div class="election-badge">
+      <div class="badge-dot" aria-hidden="true"></div>
+      <div class="badge-info">
+        <span class="badge-label">Polling Day</span>
+        <span class="badge-date">May 15, 2026</span>
       </div>
+    </div>
+    <div class="helpline">
+      <span aria-hidden="true">🆘</span>
+      <a href="tel:1950" aria-label="Voter helpline 1950 toll free">1950 Voter Helpline</a>
     </div>
   </div>
 </nav>
 
 <!-- MOBILE HEADER -->
-<header class="mobile-header">
-  <button class="hamburger" id="hamburger" aria-label="Open navigation menu" aria-expanded="false" aria-controls="sidebar">☰</button>
-  <div class="mobile-brand">⚡ ElectIQ</div>
-  <div></div>
+<header class="mobile-header" role="banner">
+  <button class="hamburger" id="hamburger" 
+          aria-label="Open navigation menu" 
+          aria-expanded="false" 
+          aria-controls="sidebar">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+  <span class="mobile-brand">⚡ ElectIQ</span>
+  <div aria-hidden="true"></div>
 </header>
 
-<!-- MAIN CONTENT -->
+<!-- MAIN -->
 <main class="main-content" id="main-content" role="main">
 
-  <!-- ── CHAT VIEW ─────────────────────────────── -->
-  <section class="view active" id="view-chat">
+  <!-- CHAT -->
+  <section class="view active" id="view-chat" aria-label="AI Election Assistant">
     <div class="view-header">
       <h1 class="view-title">AI Election Assistant</h1>
       <p class="view-sub">Ask anything about elections, candidates, or your voting rights</p>
     </div>
     <div class="chat-container">
-      <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Chat conversation" aria-atomic="false">
+      <div class="chat-messages" id="chat-messages"
+           role="log" aria-live="polite" aria-atomic="false"
+           aria-label="Chat conversation">
         <div class="chat-message assistant">
-          <div class="msg-avatar">⚡</div>
+          <div class="msg-avatar" aria-hidden="true">⚡</div>
           <div class="msg-bubble">
             <p>Namaste! 🙏 I'm <strong>ElectIQ</strong> — your personal election intelligence guide.</p>
-            <p>I can help you with:</p>
-            <div class="quick-chips">
+            <div class="quick-chips" role="group" aria-label="Quick question shortcuts">
               <button class="chip" onclick="sendChip('Where is my polling booth?')">📍 Find my booth</button>
               <button class="chip" onclick="sendChip('Compare all candidates')">⚖️ Compare candidates</button>
               <button class="chip" onclick="sendChip('How do I register to vote?')">📝 Register to vote</button>
               <button class="chip" onclick="sendChip('What is NOTA?')">❓ What is NOTA?</button>
-              <button class="chip" onclick="sendChip('Tell me about the election timeline')">📅 Election timeline</button>
+              <button class="chip" onclick="sendChip('Tell me about the election timeline')">📅 Timeline</button>
             </div>
           </div>
         </div>
       </div>
       <div class="chat-input-area">
-        <div class="lang-selector">
+        <div class="lang-row">
+          <label for="lang-select" class="sr-only">Select response language</label>
           <select id="lang-select" aria-label="Select response language">
             <option value="English">🇮🇳 English</option>
             <option value="Hindi">हिंदी</option>
@@ -124,122 +287,135 @@
           </select>
         </div>
         <div class="input-row">
-          <textarea id="chat-input" placeholder="Ask me anything about elections..." rows="1" aria-label="Type your election question here"></textarea>
-          <button class="send-btn" id="send-btn" onclick="sendMessage()" aria-label="Send message">
-            <span>➤</span>
+          <label for="chat-input" class="sr-only">Type your election question here</label>
+          <textarea id="chat-input"
+                    placeholder="Ask me anything about elections…"
+                    rows="1"
+                    aria-label="Type your election question here"
+                    aria-describedby="chat-hint"></textarea>
+          <button class="send-btn" id="send-btn"
+                  onclick="sendMessage()"
+                  aria-label="Send message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           </button>
         </div>
+        <div id="chat-hint" class="sr-only">Press Enter to send, Shift+Enter for new line</div>
       </div>
     </div>
   </section>
 
-  <!-- ── JOURNEY VIEW ───────────────────────────── -->
-  <section class="view" id="view-journey">
+  <!-- JOURNEY -->
+  <section class="view" id="view-journey" aria-label="Voter Journey Guide">
     <div class="view-header">
       <h1 class="view-title">Your Voter Journey</h1>
       <p class="view-sub">A step-by-step guide through your democratic participation</p>
     </div>
-    <div class="journey-steps" id="journey-steps">
-      <!-- Populated by JS -->
-    </div>
+    <div class="journey-steps" id="journey-steps" role="list"></div>
   </section>
 
-  <!-- ── CANDIDATES VIEW ───────────────────────── -->
-  <section class="view" id="view-candidates">
+  <!-- CANDIDATES -->
+  <section class="view" id="view-candidates" aria-label="Candidate Profiles">
     <div class="view-header">
       <h1 class="view-title">Candidates</h1>
       <p class="view-sub">Mumbai North Constituency — 2026 General Election</p>
     </div>
-    <div class="candidates-grid" id="candidates-grid">
-      <!-- Populated by JS -->
-    </div>
+    <div class="candidates-grid" id="candidates-grid" role="list"></div>
   </section>
 
-  <!-- ── COMPARE VIEW ──────────────────────────── -->
-  <section class="view" id="view-compare">
+  <!-- COMPARE -->
+  <section class="view" id="view-compare" aria-label="Candidate Comparison">
     <div class="view-header">
       <h1 class="view-title">Candidate Comparison</h1>
       <p class="view-sub">Side-by-side policy and integrity analysis</p>
     </div>
-    <div id="compare-container">
-      <!-- Populated by JS -->
-    </div>
+    <div id="compare-container"></div>
   </section>
 
-  <!-- ── BOOTH VIEW ────────────────────────────── -->
-  <section class="view" id="view-booth">
+  <!-- BOOTH -->
+  <section class="view" id="view-booth" aria-label="Find Polling Booth">
     <div class="view-header">
       <h1 class="view-title">Find Your Polling Booth</h1>
       <p class="view-sub">Live queue estimates and directions</p>
     </div>
-    <div class="booth-container" id="booth-container">
-      <!-- Populated by JS -->
+    <div class="booth-container" id="booth-container"></div>
+    <div id="booth-map" 
+         style="width:100%;height:380px;border-radius:16px;margin-top:1.5rem;background:#1a1a2e;"
+         role="img" 
+         aria-label="Interactive map showing polling booth locations"></div>
+    <div style="margin-top:1rem;text-align:center">
+      <button id="get-directions-btn" class="btn-primary" 
+              aria-label="Get driving directions to your nearest polling booth"
+              style="display:none"
+              onclick="getDirectionsToNearestBooth()">
+        🗺️ Get Directions to Nearest Booth
+      </button>
+      <div id="directions-panel" role="region" aria-label="Turn by turn directions" style="margin-top:1rem"></div>
     </div>
-    <div id="booth-map" style="width:100%;height:380px;border-radius:12px;margin-top:1.5rem;background:#1a1a2e;" aria-label="Polling booth map" role="img"></div>
   </section>
 
-  <!-- ── WAR ROOM VIEW ─────────────────────────── -->
-  <section class="view" id="view-warroom">
+  <!-- WAR ROOM -->
+  <section class="view" id="view-warroom" aria-label="Live Election War Room">
     <div class="view-header">
-      <h1 class="view-title">🔴 Live Election War Room</h1>
-      <p class="view-sub">Real-time voter turnout and booth updates</p>
+      <h1 class="view-title">🔴 Live War Room</h1>
+      <p class="view-sub">Real-time voter turnout and constituency updates</p>
     </div>
-    <div id="warroom-container">
-      <!-- Populated by JS -->
-    </div>
+    <div id="warroom-container"></div>
   </section>
 
-  <!-- ── HISTORY VIEW ──────────────────────────── -->
-  <section class="view" id="view-history">
+  <!-- HISTORY -->
+  <section class="view" id="view-history" aria-label="Electoral History">
     <div class="view-header">
       <h1 class="view-title">Constituency Time Machine</h1>
       <p class="view-sub">Mumbai North — 10 years of election history</p>
     </div>
-    <div id="history-container">
-      <!-- Populated by JS -->
-    </div>
+    <div id="history-container"></div>
   </section>
 
-  <!-- ── QUIZ VIEW ─────────────────────────────── -->
-  <section class="view" id="view-quiz">
+  <!-- QUIZ -->
+  <section class="view" id="view-quiz" aria-label="Civic Knowledge Quiz">
     <div class="view-header">
       <h1 class="view-title">Civic Knowledge Quiz</h1>
       <p class="view-sub">Test your election knowledge and earn badges</p>
     </div>
-    <div id="quiz-container">
-      <!-- Populated by JS -->
-    </div>
+    <div id="quiz-container"></div>
   </section>
 
-  <!-- ── IMPACT VIEW ───────────────────────────── -->
-  <section class="view" id="view-impact">
+  <!-- IMPACT -->
+  <section class="view" id="view-impact" aria-label="My Vote Impact">
     <div class="view-header">
       <h1 class="view-title">My Vote Matters</h1>
       <p class="view-sub">See how much your single vote can change history</p>
     </div>
-    <div id="impact-container">
-      <!-- Populated by JS -->
-    </div>
+    <div id="impact-container"></div>
   </section>
 
-  <!-- ── VOTER CHECK VIEW ──────────────────────── -->
-  <section class="view" id="view-voter">
+  <!-- VOTER CHECK -->
+  <section class="view" id="view-voter" aria-label="Voter Registration Check">
     <div class="view-header">
       <h1 class="view-title">Voter Registration Check</h1>
       <p class="view-sub">Verify your EPIC number and find your voter details</p>
     </div>
     <div id="voter-container">
       <div class="voter-check-card">
-        <div class="voter-icon">🪪</div>
+        <div class="voter-icon" aria-hidden="true">🪪</div>
         <h2>Check Your Registration</h2>
         <p>Enter your EPIC (Voter ID) number to verify your registration status</p>
         <div class="voter-input-group">
-          <label for="epic-input" class="sr-only">EPIC Voter ID Number</label>
-          <input type="text" id="epic-input" placeholder="Enter EPIC Number (e.g. ABC1234567)" maxlength="10" autocomplete="off" aria-describedby="epic-hint">
-          <div id="epic-hint" class="sr-only">Enter your 10-character voter ID starting with 3 letters followed by 7 digits</div>
-          <button class="btn-primary" onclick="checkVoter()">Verify ➤</button>
+          <label for="epic-input" class="sr-only">EPIC Voter ID Number (3 letters followed by 7 digits)</label>
+          <input type="text" id="epic-input"
+                 placeholder="e.g. ABC1234567"
+                 maxlength="10"
+                 autocomplete="off"
+                 aria-describedby="epic-format-hint"
+                 style="text-transform:uppercase">
+          <div id="epic-format-hint" class="sr-only">Format: 3 capital letters followed by 7 digits, e.g. ABC1234567</div>
+          <button class="btn-primary" onclick="checkVoter()" aria-label="Verify EPIC voter ID">
+            Verify ➤
+          </button>
         </div>
-        <div id="voter-result"></div>
+        <div id="voter-result" role="status" aria-live="polite"></div>
       </div>
     </div>
   </section>
@@ -247,67 +423,116 @@
 </main>
 
 <!-- CANDIDATE MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
-  <div class="modal" id="candidate-modal" role="dialog" aria-modal="true" aria-label="Candidate details" onclick="event.stopPropagation()">
-    <button class="modal-close" onclick="closeModal()" aria-label="Close dialog">✕</button>
+<div class="modal-overlay" id="modal-overlay" 
+     role="presentation"
+     onclick="closeModal()">
+  <div class="modal" id="candidate-modal"
+       role="dialog"
+       aria-modal="true"
+       aria-label="Candidate details"
+       onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()" aria-label="Close candidate details dialog">✕</button>
     <div id="modal-content"></div>
   </div>
 </div>
 
-<script src="/static/js/app.js"></script>
+<!-- Google Maps — loaded when booth view opens -->
 <script>
-  // Google Maps loader — loaded lazily when booth view opens
   window.initBoothMap = function() {
     const mapEl = document.getElementById('booth-map');
     if (!mapEl || !window.google) return;
+
     const map = new google.maps.Map(mapEl, {
       zoom: 13,
       center: { lat: 19.1136, lng: 72.8697 },
       mapTypeControl: false,
-      streetViewControl: false
+      streetViewControl: false,
+      styles: [
+        { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+        { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+        { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2c2c3e' }] },
+        { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0071e3' }] },
+      ]
     });
+
     window._boothMap = map;
+
+    const directionsService = new google.maps.DirectionsService();
+    const directionsRenderer = new google.maps.DirectionsRenderer({
+      suppressMarkers: false,
+      polylineOptions: { strokeColor: '#0071e3', strokeWeight: 4 }
+    });
+    directionsRenderer.setMap(map);
+    window._directionsService = directionsService;
+    window._directionsRenderer = directionsRenderer;
+
     const booths = [
       { lat: 19.1136, lng: 72.8697, name: 'Government School, Andheri West', queue: 'Short' },
       { lat: 19.1217, lng: 72.8120, name: 'Municipal Corporation Hall, Versova', queue: 'Moderate' },
       { lat: 19.1353, lng: 72.8345, name: 'Community Centre, Lokhandwala', queue: 'Long' }
     ];
-    const queueColors = { Short: '#16a34a', Moderate: '#d97706', Long: '#dc2626' };
+
+    const colors = { Short: '#30d158', Moderate: '#ffd60a', Long: '#ff453a' };
+
     booths.forEach(b => {
       const marker = new google.maps.Marker({
-        position: { lat: b.lat, lng: b.lng },
-        map,
-        title: b.name,
+        position: { lat: b.lat, lng: b.lng }, map, title: b.name,
         icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 12,
-          fillColor: queueColors[b.queue] || '#6366f1',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2
+          path: google.maps.SymbolPath.CIRCLE, scale: 12,
+          fillColor: colors[b.queue], fillOpacity: 1,
+          strokeColor: '#ffffff', strokeWeight: 2
         }
       });
-      const infoWindow = new google.maps.InfoWindow({
-        content: `<div style="font-family:sans-serif;padding:4px"><strong>${b.name}</strong><br>Queue: <span style="color:${queueColors[b.queue]}">${b.queue}</span><br><a href="https://maps.google.com/?q=${b.lat},${b.lng}" target="_blank">Get Directions ↗</a></div>`
+      const info = new google.maps.InfoWindow({
+        content: `<div style="font-family:-apple-system,sans-serif;padding:6px;color:#000">
+          <strong>${b.name}</strong><br>
+          Queue: <span style="color:${colors[b.queue]};font-weight:600">${b.queue}</span><br>
+          <a href="https://maps.google.com/?q=${b.lat},${b.lng}" target="_blank"
+             style="color:#0071e3">Get Directions ↗</a></div>`
       });
-      marker.addListener('click', () => infoWindow.open(map, marker));
+      marker.addListener('click', () => info.open(map, marker));
     });
-    // Try geolocation
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(pos => {
         map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         new google.maps.Marker({
           position: { lat: pos.coords.latitude, lng: pos.coords.longitude },
-          map,
-          title: 'Your Location',
-          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#6366f1', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 }
+          map, title: 'Your Location',
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9,
+                  fillColor: '#0071e3', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 }
         });
       }, () => {});
     }
+
+    document.getElementById('get-directions-btn').style.display = 'inline-flex';
+  };
+
+  window.getDirectionsToNearestBooth = function() {
+    if (!navigator.geolocation) { alert('Geolocation not supported'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      window._directionsService.route({
+        origin: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+        destination: { lat: 19.1136, lng: 72.8697 },
+        travelMode: google.maps.TravelMode.DRIVING
+      }, (result, status) => {
+        if (status === 'OK') {
+          window._directionsRenderer.setDirections(result);
+          const leg = result.routes[0].legs[0];
+          document.getElementById('directions-panel').innerHTML =
+            `<div class="directions-card">
+              <strong>📍 ${leg.distance.text}</strong> &nbsp;|&nbsp;
+              <strong>⏱️ ${leg.duration.text}</strong> to Government School, Andheri West
+            </div>`;
+        }
+      });
+    }, () => alert('Location access denied'));
   };
 </script>
 <script async defer
   src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&callback=initBoothMap">
 </script>
+
+<script src="/static/js/app.js"></script>
 </body>
 </html>

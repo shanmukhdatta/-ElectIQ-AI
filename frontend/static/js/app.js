@@ -1,3 +1,110 @@
+/* ══════════════════════════════════════════════════════
+   INTRO / LANDING PAGE CONTROLLER
+   ══════════════════════════════════════════════════════ */
+
+(function initIntro() {
+  // Mark body so sidebar/main are hidden until intro dismissed
+  document.body.classList.add('intro-active');
+
+  // ── Counter animation ────────────────────────────────
+  function animateCounters() {
+    document.querySelectorAll('.intro-stat-val[data-count]').forEach(el => {
+      const target = parseInt(el.dataset.count, 10);
+      const duration = 1800;
+      const start = performance.now();
+
+      function step(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(eased * target);
+        if (progress < 1) requestAnimationFrame(step);
+        else el.textContent = target;
+      }
+
+      requestAnimationFrame(step);
+    });
+  }
+
+  // ── Scroll to feature cards ──────────────────────────
+  window.scrollToFeatures = function () {
+    const features = document.getElementById('intro-features');
+    if (features) {
+      features.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // ── Enter app transition ─────────────────────────────
+  window.enterApp = function () {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('leaving')) return;
+
+    // Track with Google Analytics if available
+    if (window.trackEvent) {
+      window.trackEvent('Intro', 'enter_app', 'cta_click');
+    }
+
+    intro.classList.add('leaving');
+
+    // After fade-out, remove intro and reveal app
+    setTimeout(() => {
+      intro.classList.add('gone');
+      document.body.classList.remove('intro-active');
+
+      // Focus the chat input so keyboard users land somewhere useful
+      const chatInput = document.getElementById('chat-input');
+      if (chatInput) chatInput.focus();
+
+      // Remember: don't show intro again this session
+      try { sessionStorage.setItem('electiq_intro_seen', '1'); } catch (e) {}
+    }, 700);
+  };
+
+  // ── Keyboard: Escape or Enter to skip ───────────────
+  document.addEventListener('keydown', function onIntroKey(e) {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('gone')) {
+      document.removeEventListener('keydown', onIntroKey);
+      return;
+    }
+    if (e.key === 'Escape' || e.key === 'Enter') {
+      e.preventDefault();
+      window.enterApp();
+    }
+  });
+
+  // ── Auto-skip if already seen this session ────────────
+  try {
+    if (sessionStorage.getItem('electiq_intro_seen')) {
+      // Already seen — skip intro immediately (no animation)
+      const intro = document.getElementById('intro-screen');
+      if (intro) {
+        intro.classList.add('gone');
+        document.body.classList.remove('intro-active');
+      }
+      return; // exit initIntro early
+    }
+  } catch (e) {}
+
+  // ── Start counter animation after slight delay ────────
+  setTimeout(animateCounters, 800);
+
+  // ── Auto-enter after 12 seconds (safety fallback) ────
+  const autoTimer = setTimeout(() => {
+    const intro = document.getElementById('intro-screen');
+    if (intro && !intro.classList.contains('gone')) {
+      window.enterApp();
+    }
+  }, 12000);
+
+  // Clear timer if user enters manually
+  const enterBtn = document.getElementById('intro-enter-btn');
+  if (enterBtn) {
+    enterBtn.addEventListener('click', () => clearTimeout(autoTimer), { once: true });
+  }
+})();
+
 /* ══════════════════════════════════════════════════════════
    ElectIQ — Frontend Application
    ══════════════════════════════════════════════════════════ */

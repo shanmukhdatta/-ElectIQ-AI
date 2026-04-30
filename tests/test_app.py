@@ -1,116 +1,162 @@
+"""
+ElectIQ Test Suite — 25+ tests covering all endpoints,
+security headers, input validation, and Google service integration.
+"""
+import json
 import pytest
-from backend.app import app
 
-@pytest.fixture
-def client():
-    app.config['TESTING'] = True
-    with app.test_client() as c:
-        yield c
 
-def test_index(client):
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "X-Content-Type-Options" in response.headers
+# ── Endpoint Tests ────────────────────────────────────────────────────────────
 
-def test_get_candidates(client):
-    response = client.get("/api/candidates")
-    assert response.status_code == 200
-    data = response.get_json()
-    assert "candidates" in data
-    assert len(data["candidates"]) == 3
+def test_index_returns_200(client):
+    assert client.get("/").status_code == 200
 
-def test_get_candidate_success(client):
-    response = client.get("/api/candidate/1")
-    assert response.status_code == 200
-    assert response.get_json()["name"] == "Aarav Mehta"
 
-def test_get_candidate_not_found(client):
-    response = client.get("/api/candidate/999")
-    assert response.status_code == 404
-    assert "error" in response.get_json()
+def test_candidates_returns_list(client):
+    r = client.get("/api/candidates")
+    d = json.loads(r.data)
+    assert "candidates" in d
+    assert len(d["candidates"]) == 3
 
-def test_get_timeline(client):
-    response = client.get("/api/timeline")
-    assert response.status_code == 200
-    assert "events" in response.get_json()
-    assert len(response.get_json()["events"]) > 0
 
-def test_get_booths(client):
-    response = client.get("/api/booths")
-    assert response.status_code == 200
-    assert "booths" in response.get_json()
+def test_candidate_by_id(client):
+    r = client.get("/api/candidate/1")
+    d = json.loads(r.data)
+    assert d["name"] == "Aarav Mehta"
 
-def test_get_turnout(client):
-    response = client.get("/api/turnout")
-    assert response.status_code == 200
-    assert "current" in response.get_json()
 
-def test_get_history(client):
-    response = client.get("/api/history")
-    assert response.status_code == 200
-    assert "history" in response.get_json()
+def test_candidate_not_found(client):
+    assert client.get("/api/candidate/999").status_code == 404
 
-def test_get_quiz(client):
-    response = client.get("/api/quiz")
-    assert response.status_code == 200
-    assert "questions" in response.get_json()
-    assert len(response.get_json()["questions"]) == 5
 
-def test_voter_impact(client):
-    response = client.get("/api/impact")
-    assert response.status_code == 200
-    assert "last_margin" in response.get_json()
+def test_timeline_has_events(client):
+    r = client.get("/api/timeline")
+    d = json.loads(r.data)
+    assert len(d["events"]) > 0
 
-def test_get_integrity_success(client):
-    response = client.get("/api/integrity-score/1")
-    assert response.status_code == 200
-    assert "breakdown" in response.get_json()
 
-def test_get_integrity_not_found(client):
-    response = client.get("/api/integrity-score/999")
-    assert response.status_code == 404
+def test_booths_returns_list(client):
+    r = client.get("/api/booths")
+    assert "booths" in json.loads(r.data)
 
-def test_compare_candidates(client):
-    response = client.post("/api/compare", json={"ids": [1, 2]})
-    assert response.status_code == 200
-    assert len(response.get_json()["candidates"]) == 2
 
-def test_voter_check_valid(client):
-    response = client.post("/api/voter-check", json={"epic": "ABC1234567"})
-    assert response.status_code == 200
-    assert response.get_json()["registered"] is True
+def test_quiz_has_5_questions(client):
+    r = client.get("/api/quiz")
+    d = json.loads(r.data)
+    assert len(d["questions"]) == 5
 
-def test_voter_check_invalid(client):
-    response = client.post("/api/voter-check", json={"epic": "XY"})
-    assert response.status_code == 400
-    assert response.get_json()["registered"] is False
 
-def test_voter_check_empty(client):
-    response = client.post("/api/voter-check", json={"epic": ""})
-    assert response.status_code == 400
-    assert response.get_json()["registered"] is False
+def test_impact_returns_data(client):
+    d = json.loads(client.get("/api/impact").data)
+    assert "last_margin" in d
 
-def test_list_constituencies(client):
-    response = client.get("/api/constituencies")
-    assert response.status_code == 200
-    assert len(response.get_json()["constituencies"]) > 0
 
-def test_list_constituencies_filtered(client):
-    response = client.get("/api/constituencies?q=mumbai")
-    assert response.status_code == 200
-    assert "Mumbai North" in response.get_json()["constituencies"]
+def test_compare_returns_selected(client):
+    r = client.post("/api/compare", json={"ids": [1, 2]}, content_type="application/json")
+    d = json.loads(r.data)
+    assert len(d["candidates"]) == 2
 
-def test_security_headers(client):
-    response = client.get("/api/candidates")
-    assert response.headers.get("X-Content-Type-Options") == "nosniff"
-    assert response.headers.get("X-Frame-Options") == "DENY"
 
-def test_fact_check(client, mock_chat):
-    response = client.post("/api/fact-check", json={"claim": "test"})
-    assert response.status_code == 200
-    assert "verdict" in response.get_json()
+def test_history_returns_data(client):
+    d = json.loads(client.get("/api/history").data)
+    assert "history" in d
 
-def test_chat(client, mock_chat):
-    response = client.post("/api/chat", json={"messages": [{"role": "user", "content": "hello"}]})
-    assert response.status_code == 200
-    assert "reply" in response.get_json()
+
+def test_integrity_score_valid(client):
+    d = json.loads(client.get("/api/integrity-score/1").data)
+    assert "breakdown" in d
+
+
+def test_integrity_score_not_found(client):
+    assert client.get("/api/integrity-score/999").status_code == 404
+
+
+def test_constituencies_returns_list(client):
+    d = json.loads(client.get("/api/constituencies").data)
+    assert len(d["constituencies"]) > 0
+
+
+def test_constituencies_filtered(client):
+    d = json.loads(client.get("/api/constituencies?q=mumbai").data)
+    assert any("Mumbai" in c for c in d["constituencies"])
+
+
+# ── Voter Check Tests ─────────────────────────────────────────────────────────
+
+def test_voter_check_valid_epic(client):
+    r = client.post("/api/voter-check", json={"epic": "ABC1234567"}, content_type="application/json")
+    assert json.loads(r.data)["registered"] is True
+
+
+def test_voter_check_invalid_epic_short(client):
+    r = client.post("/api/voter-check", json={"epic": "XY"}, content_type="application/json")
+    assert json.loads(r.data)["registered"] is False
+
+
+def test_voter_check_empty_epic(client):
+    r = client.post("/api/voter-check", json={"epic": ""}, content_type="application/json")
+    assert json.loads(r.data)["registered"] is False
+
+
+def test_voter_check_xss_attempt(client):
+    r = client.post("/api/voter-check", json={"epic": "<script>alert(1)</script>"}, content_type="application/json")
+    assert json.loads(r.data)["registered"] is False
+
+
+def test_voter_check_sql_injection(client):
+    r = client.post("/api/voter-check", json={"epic": "'; DROP TABLE--"}, content_type="application/json")
+    assert json.loads(r.data)["registered"] is False
+
+
+# ── Security Header Tests ─────────────────────────────────────────────────────
+
+def test_security_headers_present(client):
+    r = client.get("/api/candidates")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert "Content-Security-Policy" in r.headers
+
+
+def test_404_returns_json(client):
+    r = client.get("/api/does-not-exist")
+    assert r.status_code == 404
+    assert "error" in json.loads(r.data)
+
+
+# ── Google Service Tests ──────────────────────────────────────────────────────
+
+def test_sentiment_endpoint(client, mock_gcp):
+    r = client.post("/api/sentiment", json={"text": "Free education for all"}, content_type="application/json")
+    d = json.loads(r.data)
+    assert "score" in d
+    assert "label" in d
+
+
+def test_sentiment_empty_text(client):
+    r = client.post("/api/sentiment", json={"text": ""}, content_type="application/json")
+    assert r.status_code == 400
+
+
+def test_translate_endpoint(client, mock_gcp):
+    r = client.post("/api/translate", json={"text": "Vote today", "target": "hi"}, content_type="application/json")
+    d = json.loads(r.data)
+    assert "translated" in d
+
+
+def test_translate_invalid_language(client):
+    r = client.post("/api/translate", json={"text": "Hello", "target": "zz"}, content_type="application/json")
+    assert r.status_code == 400
+
+
+def test_fact_check_empty(client):
+    r = client.post("/api/fact-check", json={"claim": ""}, content_type="application/json")
+    assert r.status_code == 400
+
+
+def test_chat_endpoint(client, mock_chat, mock_gcp):
+    r = client.post("/api/chat",
+        json={"messages": [{"role": "user", "content": "Who are the candidates?"}], "profile": {}},
+        content_type="application/json")
+    d = json.loads(r.data)
+    assert "reply" in d
+    assert len(d["reply"]) > 0

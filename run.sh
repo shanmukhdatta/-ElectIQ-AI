@@ -27,7 +27,7 @@ fi
 source venv/bin/activate
 
 echo "Installing dependencies..."
-pip install -r backend/requirements.txt -q
+pip install -r requirements.txt -q
 
 export $(grep -v '^#' .env | xargs)
 
@@ -36,4 +36,4 @@ echo "Starting ElectIQ on http://localhost:5000"
 echo "============================================"
 echo ""
 
-python3 backend/app.py
+python3 -m backend.app
